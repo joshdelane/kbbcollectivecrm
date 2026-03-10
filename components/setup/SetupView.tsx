@@ -20,9 +20,14 @@ export default function SetupView() {
     if (!name.trim()) return
     setSaving(true)
     setError('')
-    const result = await createOrganisation(name.trim(), prefix.trim() || undefined)
-    if (result.error) { setError(result.error); setSaving(false) }
-    else router.push('/dashboard')
+    try {
+      const result = await createOrganisation(name.trim(), prefix.trim() || undefined)
+      if (result.error) { setError(result.error); setSaving(false) }
+      else router.push('/dashboard')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setSaving(false)
+    }
   }
 
   const handleJoin = async (e: React.SyntheticEvent) => {
@@ -30,9 +35,14 @@ export default function SetupView() {
     if (!code.trim()) return
     setSaving(true)
     setError('')
-    const result = await joinOrganisation(code.trim().toUpperCase())
-    if (result.error) { setError(result.error); setSaving(false) }
-    else router.push('/dashboard')
+    try {
+      const result = await joinOrganisation(code.trim().toUpperCase())
+      if (result.error) { setError(result.error); setSaving(false) }
+      else router.push('/dashboard')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setSaving(false)
+    }
   }
 
   const inputStyle = { backgroundColor: '#1E2422', border: '1px solid #2A2F2D', color: '#FFFFFF' }
