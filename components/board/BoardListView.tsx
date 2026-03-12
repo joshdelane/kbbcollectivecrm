@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusIcon, ChevronRightIcon, XCircleIcon } from 'lucide-react'
-import { advanceJobStage, markJobDead } from '@/lib/actions'
+import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon } from 'lucide-react'
+import { advanceJobStage, markJobDead, reviveJob } from '@/lib/actions'
 import { STAGE_ACTIONS } from '@/types'
 import type { Job, Profile, EnquirySource, Stage } from '@/types'
 import JobDetailPanel from '@/components/jobs/JobDetailPanel'
@@ -88,7 +88,7 @@ function CheckCell({ checked }: { checked: boolean }) {
   )
 }
 
-function ActionCell({ job, onAdvance, onDead }: { job: Job; onAdvance: () => void; onDead?: () => void }) {
+function ActionCell({ job, onAdvance, onDead, onRevive }: { job: Job; onAdvance: () => void; onDead?: () => void; onRevive?: () => void }) {
   const action = STAGE_ACTIONS[job.stage]
   return (
     <span className="flex items-center gap-2 justify-end">
@@ -101,6 +101,17 @@ function ActionCell({ job, onAdvance, onDead }: { job: Job; onAdvance: () => voi
         >
           <XCircleIcon size={11} />
           Dead
+        </button>
+      )}
+      {onRevive && job.stage === 'archived' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRevive() }}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-opacity hover:opacity-90"
+          style={{ backgroundColor: '#1A2E2222', color: '#10B981', border: '1px solid #10B98133' }}
+          title="Revive job"
+        >
+          <RotateCcwIcon size={11} />
+          Revive
         </button>
       )}
       {action && (
@@ -156,6 +167,14 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
     if (advancing) return
     setAdvancing(job.id)
     await markJobDead(job.id)
+    router.refresh()
+    setAdvancing(null)
+  }
+
+  const handleRevive = async (job: Job) => {
+    if (advancing) return
+    setAdvancing(job.id)
+    await reviveJob(job.id)
     router.refresh()
     setAdvancing(null)
   }
@@ -295,6 +314,7 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
                       job={job}
                       onAdvance={() => handleAdvance(job)}
                       onDead={stage === 'enquiries' ? () => handleDead(job) : undefined}
+                      onRevive={stage === 'archived' ? () => handleRevive(job) : undefined}
                     />
                   </TD>
                 </tr>

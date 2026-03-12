@@ -80,6 +80,33 @@ export async function advanceJobStage(jobId: string, currentStage: Stage) {
   return { success: true }
 }
 
+export async function reviveJob(jobId: string) {
+  const supabase = await createClient()
+
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('dead_at, signed_off_at')
+    .eq('id', jobId)
+    .eq('stage', 'archived')
+    .single()
+
+  if (!job) return { error: 'Job not found or not archived' }
+
+  const updatePayload: Record<string, unknown> = job.dead_at
+    ? { stage: 'enquiries', dead_at: null }
+    : { stage: 'project_management', signed_off_at: null }
+
+  const { error } = await supabase
+    .from('jobs')
+    .update(updatePayload)
+    .eq('id', jobId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function markJobDead(jobId: string) {
   const supabase = await createClient()
   const { error } = await supabase
