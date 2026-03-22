@@ -4,6 +4,7 @@ import { getStageCounts } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import { UsersIcon } from 'lucide-react'
 import type { Profile, Job } from '@/types'
+import ZapierPanel from '@/components/integrations/ZapierPanel'
 
 export default async function TeamPage() {
   const supabase = await createClient()
@@ -14,7 +15,7 @@ export default async function TeamPage() {
   const [{ data: profiles }, { data: jobs }, { data: org }, stageCounts] = await Promise.all([
     supabase.from('profiles').select('*').order('full_name'),
     supabase.from('jobs').select('assigned_to, designer_assigned, installer_assigned, stage'),
-    supabase.from('organisations').select('name, invite_code').single(),
+    supabase.from('organisations').select('name, invite_code, webhook_secret').single(),
     getStageCounts(),
   ])
 
@@ -71,6 +72,15 @@ export default async function TeamPage() {
           <p className="text-sm mb-6" style={{ color: '#6B7280' }}>
             All team members with an account. New members sign up via the login page.
           </p>
+
+          {org?.webhook_secret && (
+            <div className="max-w-3xl mb-8">
+              <ZapierPanel
+                webhookSecret={org.webhook_secret}
+                webhookUrl={`${process.env.NEXT_PUBLIC_APP_URL ?? 'https://crm2-orpin.vercel.app'}/api/zapier/leads`}
+              />
+            </div>
+          )}
 
           <div className="space-y-3 max-w-3xl">
             {allProfiles.length === 0 ? (
