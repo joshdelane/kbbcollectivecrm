@@ -202,7 +202,7 @@ export async function getQuoteRevisionNumbers(jobId: string): Promise<number[]> 
 export async function saveQuoteLines(
   jobId: string,
   revisionNumber: number,
-  lines: Array<{ category: string | null; description: string; retail_price: number | null; cost_price: number | null; is_ordered: boolean }>
+  lines: Array<{ category: string | null; description: string; retail_price: number | null; cost_price: number | null; discount_percent: number; is_ordered: boolean }>
 ) {
   const supabase = await createClient()
 
@@ -224,20 +224,25 @@ export async function saveQuoteLines(
         description: l.description,
         retail_price: l.retail_price,
         cost_price: l.cost_price,
+        discount_percent: l.discount_percent ?? 0,
         is_ordered: l.is_ordered,
       }))
     )
     if (insertError) return { error: insertError.message }
   }
 
-  // Sync quote_total and quote_revision on the job (from the latest revision)
+  // Sync quote_total (net after discount) on the job (from the latest revision)
   const { data: jobData } = await supabase
     .from('jobs')
     .select('quote_revision')
     .eq('id', jobId)
     .single()
   if (revisionNumber >= (jobData?.quote_revision ?? 1)) {
-    const quoteTotal = lines.reduce((s, l) => s + (l.retail_price ?? 0), 0)
+    const quoteTotal = lines.reduce((s, l) => {
+      const retail = l.retail_price ?? 0
+      const disc = l.discount_percent ?? 0
+      return s + retail * (1 - disc / 100)
+    }, 0)
     await supabase
       .from('jobs')
       .update({ quote_total: quoteTotal > 0 ? quoteTotal : null })
@@ -278,6 +283,7 @@ export async function createQuoteRevision(jobId: string) {
         description: l.description,
         retail_price: l.retail_price,
         cost_price: l.cost_price,
+        discount_percent: l.discount_percent ?? 0,
         is_ordered: false, // new revision starts with nothing ordered
       }))
     )

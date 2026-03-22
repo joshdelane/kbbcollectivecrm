@@ -29,6 +29,7 @@ export interface Job {
   customer_name: string
   phone: string | null
   email: string | null
+  address_line_1: string | null
   postcode: string | null
   enquiry_source: string | null
   rough_budget: number | null
@@ -90,6 +91,7 @@ export interface QuoteLine {
   description: string
   retail_price: number | null
   cost_price: number | null
+  discount_percent: number
   is_ordered: boolean
   created_at: string
 }

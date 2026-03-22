@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { PlusIcon, Trash2Icon, SaveIcon, Maximize2Icon, PrinterIcon, XIcon, CopyPlusIcon } from 'lucide-react'
+import { PlusIcon, Trash2Icon, SaveIcon, Maximize2Icon, PrinterIcon, XIcon, CopyPlusIcon, TagIcon } from 'lucide-react'
 import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision } from '@/lib/actions'
 import { QUOTE_CATEGORIES } from '@/types'
 import type { Job, QuoteCategory } from '@/types'
@@ -11,6 +11,7 @@ interface LineItem {
   description: string
   retail_price: string
   cost_price: string
+  discount_percent: string
   is_ordered: boolean
 }
 
@@ -33,6 +34,9 @@ function fmt(n: number) {
 }
 function parseNum(s: string): number {
   return parseFloat(s) || 0
+}
+function netPrice(retail: number, discPct: number): number {
+  return retail * (1 - discPct / 100)
 }
 
 // ─── Proof of Purchase ───────────────────────────────────────────────────────
@@ -92,6 +96,7 @@ function ProofOfPurchase({
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#9CA3AF' }}>Prepared for</p>
                 <p className="text-base font-semibold" style={{ color: '#1D211F' }}>{job.customer_name}</p>
+                {job.address_line_1 && <p className="text-sm" style={{ color: '#6B7280' }}>{job.address_line_1}</p>}
                 {job.phone && <p className="text-sm" style={{ color: '#6B7280' }}>{job.phone}</p>}
                 {job.email && <p className="text-sm" style={{ color: '#6B7280' }}>{job.email}</p>}
                 {job.postcode && <p className="text-sm" style={{ color: '#6B7280' }}>{job.postcode}</p>}
@@ -121,14 +126,19 @@ function ProofOfPurchase({
                   </tr>
                 </thead>
                 <tbody>
-                  {appliances.map((l, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                      <td className="py-2.5" style={{ color: '#1D211F' }}>{l.description}</td>
-                      <td className="py-2.5 text-right font-medium" style={{ color: '#374151' }}>
-                        {parseNum(l.retail_price) > 0 ? `£${fmt(parseNum(l.retail_price))}` : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {appliances.map((l, i) => {
+                    const retail = parseNum(l.retail_price)
+                    const disc = parseNum(l.discount_percent)
+                    const net = netPrice(retail, disc)
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <td className="py-2.5" style={{ color: '#1D211F' }}>{l.description}</td>
+                        <td className="py-2.5 text-right font-medium" style={{ color: '#374151' }}>
+                          {net > 0 ? `£${fmt(net)}` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
@@ -156,7 +166,10 @@ function FullScreenQuote({
 }) {
   const totalRetail = lines.reduce((s, l) => s + parseNum(l.retail_price), 0)
   const totalCost = lines.reduce((s, l) => s + parseNum(l.cost_price), 0)
-  const totalMargin = totalRetail - totalCost
+  const totalNet = lines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
+  const totalDiscount = totalRetail - totalNet
+  const totalMargin = totalNet - totalCost
+  const hasDiscount = totalDiscount > 0.001
 
   // Group lines by category for display
   const grouped: { category: string; items: { line: LineItem; idx: number }[] }[] = []
@@ -211,6 +224,7 @@ function FullScreenQuote({
             <div className="mt-6">
               <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#9CA3AF' }}>Prepared for</p>
               <p className="text-base font-semibold" style={{ color: '#1D211F' }}>{job.customer_name}</p>
+              {job.address_line_1 && <p className="text-sm" style={{ color: '#6B7280' }}>{job.address_line_1}</p>}
               {job.phone && <p className="text-sm" style={{ color: '#6B7280' }}>{job.phone}</p>}
               {job.email && <p className="text-sm" style={{ color: '#6B7280' }}>{job.email}</p>}
               {job.postcode && <p className="text-sm" style={{ color: '#6B7280' }}>{job.postcode}</p>}
@@ -224,10 +238,19 @@ function FullScreenQuote({
                   <tbody>
                     {items.map(({ line, idx }) => {
                       const retail = parseNum(line.retail_price)
+                      const disc = parseNum(line.discount_percent)
+                      const net = netPrice(retail, disc)
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid #F9FAFB' }}>
                           <td className="py-2 pr-4" style={{ color: '#1D211F' }}>{line.description || <span style={{ color: '#D1D5DB' }}>—</span>}</td>
-                          <td className="py-2 text-right font-medium" style={{ color: '#374151' }}>{retail > 0 ? `£${fmt(retail)}` : '—'}</td>
+                          <td className="py-2 text-right font-medium" style={{ color: '#374151', whiteSpace: 'nowrap' }}>
+                            {net > 0 ? (
+                              <>
+                                {disc > 0 && <span className="text-xs line-through mr-2" style={{ color: '#9CA3AF' }}>£{fmt(retail)}</span>}
+                                £{fmt(net)}
+                              </>
+                            ) : '—'}
+                          </td>
                           <td className="no-print py-2 pl-4 text-center" style={{ width: '60px' }}>
                             <button onClick={() => onToggleOrdered(idx)} className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 transition-all"
                               style={{ borderColor: line.is_ordered ? '#059669' : '#D1D5DB', backgroundColor: line.is_ordered ? '#059669' : 'transparent' }}>
@@ -244,10 +267,22 @@ function FullScreenQuote({
             {lines.length === 0 && <p className="text-sm text-center py-8" style={{ color: '#9CA3AF' }}>No line items</p>}
 
             {totalRetail > 0 && (
-              <div className="mt-4 ml-auto w-56">
+              <div className="mt-4 ml-auto w-64">
+                {hasDiscount && (
+                  <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #E5E7EB' }}>
+                    <span className="text-sm" style={{ color: '#6B7280' }}>Subtotal</span>
+                    <span className="text-sm font-medium" style={{ color: '#6B7280' }}>£{fmt(totalRetail)}</span>
+                  </div>
+                )}
+                {hasDiscount && (
+                  <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #E5E7EB' }}>
+                    <span className="text-sm" style={{ color: '#059669' }}>Discount</span>
+                    <span className="text-sm font-medium" style={{ color: '#059669' }}>−£{fmt(totalDiscount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between py-2" style={{ borderTop: '2px solid #1D211F' }}>
                   <span className="text-sm font-bold" style={{ color: '#1D211F' }}>Total</span>
-                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalRetail)}</span>
+                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalNet)}</span>
                 </div>
               </div>
             )}
@@ -259,18 +294,22 @@ function FullScreenQuote({
                 </div>
                 {[
                   { label: 'Total Retail', value: totalRetail, color: '#1D211F' },
+                  ...(hasDiscount ? [{ label: 'Total Discount', value: -totalDiscount, color: '#059669', prefix: '−£' }] : []),
+                  ...(hasDiscount ? [{ label: 'Net Revenue', value: totalNet, color: '#1D211F' }] : []),
                   { label: 'Total Cost', value: totalCost, color: '#6B7280' },
                   { label: 'Gross Margin', value: totalMargin, color: totalMargin >= 0 ? '#059669' : '#DC2626' },
-                ].map(({ label, value, color }) => (
+                ].map(({ label, value, color, prefix }) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid #F3F4F6' }}>
                     <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>{label}</span>
-                    <span className="text-sm font-bold" style={{ color }}>£{fmt(value)}</span>
+                    <span className="text-sm font-bold" style={{ color }}>
+                      {prefix ? `${prefix}${fmt(Math.abs(value))}` : `£${fmt(value)}`}
+                    </span>
                   </div>
                 ))}
-                {totalRetail > 0 && (
+                {totalNet > 0 && (
                   <div className="flex items-center justify-between px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Margin %</span>
-                    <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalRetail) * 100).toFixed(1)}%</span>
+                    <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalNet) * 100).toFixed(1)}%</span>
                   </div>
                 )}
               </div>
@@ -296,6 +335,7 @@ export default function QuoteTab({ job }: { job: Job }) {
   const [error, setError] = useState('')
   const [fullScreen, setFullScreen] = useState(false)
   const [showPoP, setShowPoP] = useState(false)
+  const [globalDiscount, setGlobalDiscount] = useState('')
 
   const loadRevision = async (revNum: number) => {
     setLoading(true)
@@ -305,6 +345,7 @@ export default function QuoteTab({ job }: { job: Job }) {
       description: l.description,
       retail_price: l.retail_price?.toString() ?? '',
       cost_price: l.cost_price?.toString() ?? '',
+      discount_percent: l.discount_percent ? l.discount_percent.toString() : '',
       is_ordered: l.is_ordered ?? false,
     })))
     setLoading(false)
@@ -325,6 +366,7 @@ export default function QuoteTab({ job }: { job: Job }) {
         description: l.description,
         retail_price: l.retail_price?.toString() ?? '',
         cost_price: l.cost_price?.toString() ?? '',
+        discount_percent: l.discount_percent ? l.discount_percent.toString() : '',
         is_ordered: l.is_ordered ?? false,
       })))
       setLoading(false)
@@ -353,13 +395,19 @@ export default function QuoteTab({ job }: { job: Job }) {
   }
 
   const addLine = () =>
-    setLines((prev) => [...prev, { category: null, description: '', retail_price: '', cost_price: '', is_ordered: false }])
+    setLines((prev) => [...prev, { category: null, description: '', retail_price: '', cost_price: '', discount_percent: '', is_ordered: false }])
 
   const update = (i: number, field: keyof LineItem, value: string | boolean | null) =>
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: value } : l)))
 
   const remove = (i: number) =>
     setLines((prev) => prev.filter((_, idx) => idx !== i))
+
+  const applyGlobalDiscount = () => {
+    const pct = parseFloat(globalDiscount)
+    if (isNaN(pct) || pct < 0 || pct > 100) return
+    setLines((prev) => prev.map((l) => ({ ...l, discount_percent: pct === 0 ? '' : pct.toString() })))
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -369,6 +417,7 @@ export default function QuoteTab({ job }: { job: Job }) {
       description: l.description,
       retail_price: l.retail_price ? parseFloat(l.retail_price) : null,
       cost_price: l.cost_price ? parseFloat(l.cost_price) : null,
+      discount_percent: l.discount_percent ? parseFloat(l.discount_percent) : 0,
       is_ordered: l.is_ordered,
     })))
     if (result.error) {
@@ -382,7 +431,10 @@ export default function QuoteTab({ job }: { job: Job }) {
 
   const totalRetail = lines.reduce((s, l) => s + parseNum(l.retail_price), 0)
   const totalCost = lines.reduce((s, l) => s + parseNum(l.cost_price), 0)
-  const totalMargin = totalRetail - totalCost
+  const totalNet = lines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
+  const totalDiscount = totalRetail - totalNet
+  const totalMargin = totalNet - totalCost
+  const hasDiscount = totalDiscount > 0.001
   const isLatest = activeRevision === latestRevision
   const isArchived = job.stage === 'archived'
 
@@ -477,6 +529,7 @@ export default function QuoteTab({ job }: { job: Job }) {
                   </div>
                 </div>
                 <p className="text-sm font-semibold" style={{ color: '#1D211F' }}>{job.customer_name}</p>
+                {job.address_line_1 && <p className="text-xs" style={{ color: '#6B7280' }}>{job.address_line_1}</p>}
                 {job.phone && <p className="text-xs" style={{ color: '#6B7280' }}>{job.phone}</p>}
                 {job.email && <p className="text-xs" style={{ color: '#6B7280' }}>{job.email}</p>}
                 {job.postcode && <p className="text-xs" style={{ color: '#6B7280' }}>{job.postcode}</p>}
@@ -485,12 +538,43 @@ export default function QuoteTab({ job }: { job: Job }) {
                 </p>
               </div>
 
+              {/* Global discount bar */}
+              {isLatest && (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                  <TagIcon size={13} style={{ color: '#B45309', flexShrink: 0 }} />
+                  <span className="text-xs font-semibold" style={{ color: '#92400E' }}>Global discount</span>
+                  <div className="relative ml-1" style={{ width: '80px' }}>
+                    <input
+                      type="number"
+                      className={INPUT}
+                      style={{ ...INPUT_STYLE, paddingRight: '20px', backgroundColor: '#FFFFFF', fontSize: '12px' }}
+                      placeholder="0"
+                      value={globalDiscount}
+                      onChange={(e) => setGlobalDiscount(e.target.value)}
+                      min="0"
+                      max="100"
+                      step="0.5"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#9CA3AF' }}>%</span>
+                  </div>
+                  <button
+                    onClick={applyGlobalDiscount}
+                    className="px-2.5 py-1 rounded text-xs font-semibold hover:opacity-80"
+                    style={{ backgroundColor: '#B45309', color: '#FFFFFF' }}
+                  >
+                    Apply to all
+                  </button>
+                  <span className="text-xs ml-1" style={{ color: '#92400E' }}>or set per line below</span>
+                </div>
+              )}
+
               {/* Column headers */}
               <div className="flex items-center gap-1 mb-1">
-                <div className="grid gap-1 flex-1" style={{ gridTemplateColumns: '120px 1fr 110px 110px 90px 28px' }}>
+                <div className="grid gap-1 flex-1" style={{ gridTemplateColumns: '120px 1fr 100px 62px 100px 82px 28px' }}>
                   <span style={LABEL_STYLE}>Category</span>
                   <span style={LABEL_STYLE}>Description</span>
                   <span style={{ ...LABEL_STYLE, textAlign: 'right' }}>Retail</span>
+                  <span style={{ ...LABEL_STYLE, textAlign: 'right' }}>Disc %</span>
                   <span style={{ ...LABEL_STYLE, textAlign: 'right' }}>Cost</span>
                   <span style={{ ...LABEL_STYLE, textAlign: 'right' }}>Margin</span>
                   <span style={{ ...LABEL_STYLE, textAlign: 'center' }}>✓</span>
@@ -498,15 +582,17 @@ export default function QuoteTab({ job }: { job: Job }) {
                 {isLatest && <div style={{ width: '24px', flexShrink: 0 }} />}
               </div>
 
-              {/* Line items — flat list with category selector */}
+              {/* Line items */}
               <div className="space-y-1.5">
                 {lines.map((line, i) => {
                   const retail = parseNum(line.retail_price)
                   const cost = parseNum(line.cost_price)
-                  const margin = retail - cost
+                  const disc = parseNum(line.discount_percent)
+                  const net = netPrice(retail, disc)
+                  const margin = net - cost
                   return (
                     <div key={i} className="flex items-center gap-1">
-                      <div className="grid gap-1 flex-1" style={{ gridTemplateColumns: '120px 1fr 110px 110px 90px 28px' }}>
+                      <div className="grid gap-1 flex-1" style={{ gridTemplateColumns: '120px 1fr 100px 62px 100px 82px 28px' }}>
                         <select
                           className={INPUT}
                           style={{ ...INPUT_STYLE, cursor: isLatest ? 'pointer' : 'default', fontSize: '11px' }}
@@ -523,6 +609,11 @@ export default function QuoteTab({ job }: { job: Job }) {
                           <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#9CA3AF' }}>£</span>
                           <input type="number" className={INPUT} style={{ ...INPUT_STYLE, paddingLeft: '16px' }} placeholder="0"
                             value={line.retail_price} onChange={(e) => isLatest && update(i, 'retail_price', e.target.value)} readOnly={!isLatest} min="0" step="0.01" />
+                        </div>
+                        <div className="relative">
+                          <input type="number" className={INPUT} style={{ ...INPUT_STYLE, paddingRight: '16px', textAlign: 'right' }} placeholder="0"
+                            value={line.discount_percent} onChange={(e) => isLatest && update(i, 'discount_percent', e.target.value)} readOnly={!isLatest} min="0" max="100" step="0.5" />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#9CA3AF' }}>%</span>
                         </div>
                         <div className="relative">
                           <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#9CA3AF' }}>£</span>
@@ -555,18 +646,18 @@ export default function QuoteTab({ job }: { job: Job }) {
                 </button>
               )}
 
-              {/* Category subheading preview (read-only grouped view below the flat list) */}
+              {/* Category subheading preview */}
               {groups.length > 1 && (
                 <div className="rounded-lg overflow-hidden mt-4" style={{ border: '1px solid #E5E7EB' }}>
                   <div className="px-4 py-2" style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                     <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Grouped summary</span>
                   </div>
                   {groups.map(({ category, items }) => {
-                    const catTotal = items.reduce((s, { line }) => s + parseNum(line.retail_price), 0)
+                    const catNet = items.reduce((s, { line }) => s + netPrice(parseNum(line.retail_price), parseNum(line.discount_percent)), 0)
                     return (
                       <div key={category ?? 'other'} className="px-4 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid #F3F4F6' }}>
                         <span className="text-xs font-semibold" style={{ color: '#374151' }}>{category ?? 'Uncategorised'}</span>
-                        <span className="text-xs font-bold" style={{ color: '#1D211F' }}>£{fmt(catTotal)}</span>
+                        <span className="text-xs font-bold" style={{ color: '#1D211F' }}>£{fmt(catNet)}</span>
                       </div>
                     )
                   })}
@@ -576,21 +667,34 @@ export default function QuoteTab({ job }: { job: Job }) {
               {/* Totals */}
               {lines.length > 0 && (
                 <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
-                  {[
-                    { label: 'Total Retail', value: totalRetail, color: '#1D211F' },
-                    { label: 'Total Cost', value: totalCost, color: '#6B7280' },
-                    { label: 'Gross Margin', value: totalMargin, color: totalMargin >= 0 ? '#059669' : '#DC2626' },
-                  ].map(({ label, value, color }, idx, arr) => (
-                    <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                      style={{ borderBottom: idx < arr.length - 1 ? '1px solid #F3F4F6' : undefined, backgroundColor: idx === arr.length - 1 ? '#F9FAFB' : '#FFFFFF' }}>
-                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>{label}</span>
-                      <span className="text-sm font-bold" style={{ color }}>£{fmt(value)}</span>
+                  <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Total Retail</span>
+                    <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalRetail)}</span>
+                  </div>
+                  {hasDiscount && (
+                    <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#F0FDF4' }}>
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#059669' }}>Total Discount</span>
+                      <span className="text-sm font-bold" style={{ color: '#059669' }}>−£{fmt(totalDiscount)}</span>
                     </div>
-                  ))}
-                  {totalRetail > 0 && (
+                  )}
+                  {hasDiscount && (
+                    <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Net Revenue</span>
+                      <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalNet)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Total Cost</span>
+                    <span className="text-sm font-bold" style={{ color: '#6B7280' }}>£{fmt(totalCost)}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: '#F9FAFB' }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Gross Margin</span>
+                    <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>£{fmt(totalMargin)}</span>
+                  </div>
+                  {totalNet > 0 && (
                     <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: '#F9FAFB', borderTop: '1px solid #E5E7EB' }}>
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Margin %</span>
-                      <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalRetail) * 100).toFixed(1)}%</span>
+                      <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalNet) * 100).toFixed(1)}%</span>
                     </div>
                   )}
                 </div>

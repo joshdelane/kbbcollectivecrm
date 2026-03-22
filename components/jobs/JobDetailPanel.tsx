@@ -64,6 +64,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     customer_name: job.customer_name,
     phone: job.phone ?? '',
     email: job.email ?? '',
+    address_line_1: job.address_line_1 ?? '',
     postcode: job.postcode ?? '',
     enquiry_source: job.enquiry_source ?? '',
     rough_budget: job.rough_budget ?? undefined,
@@ -198,6 +199,10 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
               <input type="email" className={INPUT} style={INPUT_STYLE} value={(form.email as string) ?? ''} onChange={(e) => set('email', e.target.value)} placeholder="email@example.com" />
             </Field>
           </div>
+
+          <Field label="Address line 1">
+            <input className={INPUT} style={INPUT_STYLE} value={(form.address_line_1 as string) ?? ''} onChange={(e) => set('address_line_1', e.target.value)} placeholder="123 High Street" />
+          </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Postcode">
