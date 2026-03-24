@@ -15,6 +15,7 @@ export default async function InstallCalendarPage() {
       .from('jobs')
       .select('id, job_id, customer_name, signed_off_install_date, fitting_days, stage, worktop_template_date, worktop_install_date')
       .eq('stage', 'project_management')
+      .is('deleted_at', null)
       .not('signed_off_install_date', 'is', null)
       .not('fitting_days', 'is', null)
       .order('signed_off_install_date', { ascending: true }),

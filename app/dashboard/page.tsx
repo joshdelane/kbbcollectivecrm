@@ -60,13 +60,14 @@ export default async function DashboardPage({ searchParams }: Props) {
     stageCounts,
     closeRates,
   ] = await Promise.all([
-    supabase.from('jobs').select('stage'),
+    supabase.from('jobs').select('stage').is('deleted_at', null),
     supabase
       .from('jobs')
       .select('stage, qualified_at, dead_at, order_valuation, created_at')
       .gte('created_at', start.toISOString())
-      .lte('created_at', end.toISOString()),
-    supabase.from('jobs').select('rough_budget, enquiry_source').eq('stage', 'qualified_leads'),
+      .lte('created_at', end.toISOString())
+      .is('deleted_at', null),
+    supabase.from('jobs').select('rough_budget, enquiry_source').eq('stage', 'qualified_leads').is('deleted_at', null),
     getStageCounts(),
     getSourceCloseRates(),
   ])

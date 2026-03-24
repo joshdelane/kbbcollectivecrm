@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { XIcon, SaveIcon, PlusIcon } from 'lucide-react'
-import { updateJob, createEnquirySource } from '@/lib/actions'
+import { XIcon, SaveIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { updateJob, createEnquirySource, deleteJob } from '@/lib/actions'
 import { STAGES } from '@/types'
 import type { Job, Profile, Stage, EnquirySource } from '@/types'
 import QuoteTab from './QuoteTab'
@@ -14,6 +14,7 @@ interface JobDetailPanelProps {
   onSourceAdded: (s: EnquirySource) => void
   onClose: () => void
   onJobUpdated: () => void
+  onDeleted: () => void
 }
 
 const STAGE_LABELS: Record<Stage, string> = {
@@ -59,7 +60,7 @@ function CheckboxField({ label, checked, onChange }: { label: string; checked: b
   )
 }
 
-export default function JobDetailPanel({ job, profiles, enquirySources, onSourceAdded, onClose, onJobUpdated }: JobDetailPanelProps) {
+export default function JobDetailPanel({ job, profiles, enquirySources, onSourceAdded, onClose, onJobUpdated, onDeleted }: JobDetailPanelProps) {
   const [form, setForm] = useState<FormState>({
     customer_name: job.customer_name,
     phone: job.phone ?? '',
@@ -94,6 +95,8 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const set = (field: keyof FormState, value: string | number | boolean | null) =>
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -109,6 +112,18 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     setNewSourceName('')
     setAddingSource(false)
     setSavingSource(false)
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    const result = await deleteJob(job.id)
+    if (result.error) {
+      setError(result.error)
+      setDeleting(false)
+      setConfirmDelete(false)
+    } else {
+      onDeleted()
+    }
   }
 
   const handleSave = async () => {
@@ -349,14 +364,31 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
         </div>
 
         <div className="flex-none px-6 py-4 flex items-center gap-3" style={{ borderTop: '1px solid #F3F4F6' }}>
-          {error && <p className="text-xs flex-1" style={{ color: '#DC2626' }}>{error}</p>}
-          {saved && <p className="text-xs flex-1" style={{ color: '#059669' }}>Saved!</p>}
-          {!error && !saved && <div className="flex-1" />}
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#B89763' }}>
-            <SaveIcon size={14} />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          {confirmDelete ? (
+            <>
+              <p className="text-xs flex-1 font-medium" style={{ color: '#DC2626' }}>Permanently delete this job?</p>
+              <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#DC2626' }}>
+                <Trash2Icon size={14} />
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <Trash2Icon size={14} />
+                Delete
+              </button>
+              {error && <p className="text-xs flex-1" style={{ color: '#DC2626' }}>{error}</p>}
+              {saved && <p className="text-xs flex-1" style={{ color: '#059669' }}>Saved!</p>}
+              {!error && !saved && <div className="flex-1" />}
+              <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#B89763' }}>
+                <SaveIcon size={14} />
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </>
+          )}
         </div>
         </>}
       </div>

@@ -37,6 +37,7 @@ export default async function BoardStagePage({ params }: Props) {
       .from('jobs')
       .select('*')
       .eq('stage', stage)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     supabase.from('profiles').select('*').order('full_name'),
     supabase.from('enquiry_sources').select('*').order('sort_order'),

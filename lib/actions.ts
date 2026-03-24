@@ -300,6 +300,19 @@ export async function createQuoteRevision(jobId: string) {
   return { success: true, revision: newRevision }
 }
 
+export async function deleteJob(jobId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', jobId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function createEnquirySource(name: string) {
   const supabase = await createClient()
   const orgId = await getOrgId()

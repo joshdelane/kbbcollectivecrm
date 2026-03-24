@@ -332,6 +332,7 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
           onSourceAdded={(s) => setSources((prev) => [...prev, s])}
           onClose={() => setSelectedJob(null)}
           onJobUpdated={() => { setSelectedJob(null); router.refresh() }}
+          onDeleted={() => { setSelectedJob(null); router.refresh() }}
         />
       )}
 

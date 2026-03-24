@@ -3,7 +3,7 @@ import type { Stage } from '@/types'
 
 export async function getStageCounts(): Promise<Record<Stage, number>> {
   const supabase = await createClient()
-  const { data } = await supabase.from('jobs').select('stage')
+  const { data } = await supabase.from('jobs').select('stage').is('deleted_at', null)
 
   const counts: Record<string, number> = {}
   for (const row of data ?? []) {
@@ -20,6 +20,7 @@ export async function getSourceCloseRates(): Promise<Record<string, number>> {
     .from('jobs')
     .select('enquiry_source, sold_at, dead_at')
     .or('sold_at.not.is.null,dead_at.not.is.null')
+    .is('deleted_at', null)
 
   const counts: Record<string, { sold: number; total: number }> = {}
   for (const row of data ?? []) {
