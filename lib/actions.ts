@@ -313,6 +313,72 @@ export async function deleteJob(jobId: string) {
   return { success: true }
 }
 
+// ── Marketing Spend ──────────────────────────────────────────────
+
+export async function createMarketingSpend(data: {
+  channel: string
+  amount: number
+  spend_month: string // 'YYYY-MM-DD' (first day of month)
+  notes?: string
+}) {
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return { error: 'No organisation found' }
+
+  const { error } = await supabase
+    .from('marketing_spend')
+    .insert([{ ...data, organisation_id: orgId }])
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function updateMarketingSpend(
+  id: string,
+  data: { channel?: string; amount?: number; spend_month?: string; notes?: string }
+) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('marketing_spend')
+    .update(data)
+    .eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function deleteMarketingSpend(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('marketing_spend')
+    .delete()
+    .eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Global Job Search ─────────────────────────────────────────────
+
+export async function searchJobs(query: string): Promise<
+  Array<{ id: string; job_id: string; customer_name: string; stage: Stage }>
+> {
+  if (!query.trim()) return []
+  const supabase = await createClient()
+  const q = query.trim()
+  const { data } = await supabase
+    .from('jobs')
+    .select('id, job_id, customer_name, stage')
+    .is('deleted_at', null)
+    .or(`customer_name.ilike.%${q}%,job_id.ilike.%${q}%`)
+    .order('created_at', { ascending: false })
+    .limit(10)
+  return (data ?? []) as Array<{ id: string; job_id: string; customer_name: string; stage: Stage }>
+}
+
 export async function createEnquirySource(name: string) {
   const supabase = await createClient()
   const orgId = await getOrgId()

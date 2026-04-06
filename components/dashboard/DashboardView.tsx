@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import type { Stage } from '@/types'
 
 interface DashboardViewProps {
@@ -11,9 +12,15 @@ interface DashboardViewProps {
   periodDead: number
   conversionRate: number | null
   salesAgreed: number
+  aov: number | null
+  cpl: number | null
+  cpa: number | null
+  grossMarginPct: number | null
+  grossMarginJobCount: number
   projectedPipeline: number
   stageCounts: Partial<Record<Stage, number>>
   totalJobs: number
+  hasMarketingSpend: boolean
 }
 
 const RANGES = [
@@ -58,6 +65,10 @@ function StatCard({
   )
 }
 
+function fmt(n: number) {
+  return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
 export default function DashboardView({
   rangeLabel,
   currentRange,
@@ -66,9 +77,15 @@ export default function DashboardView({
   periodDead,
   conversionRate,
   salesAgreed,
+  aov,
+  cpl,
+  cpa,
+  grossMarginPct,
+  grossMarginJobCount,
   projectedPipeline,
   stageCounts,
   totalJobs,
+  hasMarketingSpend,
 }: DashboardViewProps) {
   const router = useRouter()
 
@@ -139,6 +156,72 @@ export default function DashboardView({
         />
       </div>
 
+      {/* Financial metrics row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          label="Sales Agreed"
+          value={salesAgreed > 0 ? fmt(salesAgreed) : '£0'}
+          sub="Sum of order valuations"
+          accent
+        />
+        <StatCard
+          label="AOV"
+          value={aov !== null ? fmt(aov) : '—'}
+          sub={aov !== null ? 'Average order value' : 'No sales this period'}
+          accent={aov !== null}
+        />
+        <StatCard
+          label="Gross Margin %"
+          value={grossMarginPct !== null ? `${grossMarginPct}%` : '—'}
+          sub={
+            grossMarginPct !== null
+              ? `Avg across ${grossMarginJobCount} PM job${grossMarginJobCount !== 1 ? 's' : ''}`
+              : 'Add cost prices to quotes'
+          }
+          accent={grossMarginPct !== null}
+        />
+        <div
+          className="rounded-xl p-5 flex flex-col gap-2"
+          style={{ backgroundColor: '#252B28' }}
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6B7280' }}>
+            CPL / CPA
+          </p>
+          {!hasMarketingSpend ? (
+            <>
+              <p className="text-xl font-bold" style={{ color: '#4A5250' }}>—</p>
+              <Link
+                href="/marketing"
+                className="text-xs underline underline-offset-2"
+                style={{ color: '#B89763' }}
+              >
+                Add marketing spend →
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold" style={{ color: cpl !== null ? '#B89763' : '#4A5250' }}>
+                    {cpl !== null ? fmt(cpl) : '—'}
+                  </span>
+                  <span className="text-xs font-semibold uppercase" style={{ color: '#6B7280' }}>CPL</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold" style={{ color: cpa !== null ? '#B89763' : '#4A5250' }}>
+                    {cpa !== null ? fmt(cpa) : '—'}
+                  </span>
+                  <span className="text-xs font-semibold uppercase" style={{ color: '#6B7280' }}>CPA</span>
+                </div>
+              </div>
+              <Link href="/marketing" className="text-xs" style={{ color: '#4A5250' }}>
+                Manage spend →
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Main stats row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* Conversion Rate */}
@@ -173,40 +256,25 @@ export default function DashboardView({
           )}
         </div>
 
-        {/* Sales Agreed */}
+        {/* Projected Forward Sales Pipeline */}
         <div className="rounded-xl p-6" style={{ backgroundColor: '#252B28' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: '#6B7280' }}>
-            Sales Agreed
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#6B7280' }}>
+            Projected Forward Sales Pipeline
+          </p>
+          <p className="text-xs mb-4" style={{ color: '#4A5250' }}>
+            Sum of budget × historical close rate for all current qualified leads
           </p>
           <p className="text-5xl font-bold mb-2" style={{ color: '#B89763' }}>
-            {salesAgreed > 0
-              ? `£${salesAgreed.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-              : '£0'}
+            {projectedPipeline > 0
+              ? `£${Math.round(projectedPipeline).toLocaleString('en-GB')}`
+              : '—'}
           </p>
-          <p className="text-sm" style={{ color: '#6B7280' }}>
-            Sum of order valuations for this period
-          </p>
+          {projectedPipeline === 0 && (
+            <p className="text-xs" style={{ color: '#4A5250' }}>
+              Appears once qualified leads have a budget and enough historical data exists per source
+            </p>
+          )}
         </div>
-      </div>
-
-      {/* Projected Forward Sales Pipeline */}
-      <div className="rounded-xl p-6 mb-4" style={{ backgroundColor: '#252B28' }}>
-        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#6B7280' }}>
-          Projected Forward Sales Pipeline
-        </p>
-        <p className="text-xs mb-4" style={{ color: '#4A5250' }}>
-          Sum of budget × historical close rate for all current qualified leads
-        </p>
-        <p className="text-5xl font-bold mb-2" style={{ color: '#B89763' }}>
-          {projectedPipeline > 0
-            ? `£${Math.round(projectedPipeline).toLocaleString('en-GB')}`
-            : '—'}
-        </p>
-        {projectedPipeline === 0 && (
-          <p className="text-xs" style={{ color: '#4A5250' }}>
-            Appears once qualified leads have a budget and enough historical data exists per source
-          </p>
-        )}
       </div>
 
       {/* Pipeline breakdown */}

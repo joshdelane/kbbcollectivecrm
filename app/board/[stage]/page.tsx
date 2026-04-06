@@ -15,9 +15,10 @@ const VALID_STAGES: Stage[] = [
 
 interface Props {
   params: Promise<{ stage: string }>
+  searchParams: Promise<{ open?: string }>
 }
 
-export default async function BoardStagePage({ params }: Props) {
+export default async function BoardStagePage({ params, searchParams }: Props) {
   const { stage } = await params
 
   if (!VALID_STAGES.includes(stage as Stage)) notFound()
@@ -25,6 +26,8 @@ export default async function BoardStagePage({ params }: Props) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const { open: openJobId } = await searchParams
 
   const [
     { data: jobs },
@@ -55,6 +58,7 @@ export default async function BoardStagePage({ params }: Props) {
           profiles={(profiles as Profile[]) ?? []}
           enquirySources={(enquirySources as EnquirySource[]) ?? []}
           closeRates={closeRates}
+          openJobId={openJobId}
         />
       </main>
     </div>

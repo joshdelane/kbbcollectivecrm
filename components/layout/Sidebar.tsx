@@ -13,8 +13,10 @@ import {
   LogOutIcon,
   CalendarDaysIcon,
   ClipboardListIcon,
+  TrendingUpIcon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import GlobalSearch from './GlobalSearch'
 import type { Stage } from '@/types'
 
 interface SidebarProps {
@@ -56,8 +58,11 @@ export default function Sidebar({ stageCounts }: SidebarProps) {
         <p className="text-xs font-semibold mt-0.5" style={{ color: '#B89763' }}>CRM</p>
       </div>
 
+      {/* Search */}
+      <GlobalSearch />
+
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-2 space-y-1">
         {/* Dashboard */}
         <NavItem
           href="/dashboard"
@@ -89,6 +94,14 @@ export default function Sidebar({ stageCounts }: SidebarProps) {
         <div className="pt-4 pb-2 px-2">
           <div style={{ height: '1px', backgroundColor: '#252B28' }} />
         </div>
+
+        {/* Marketing Spend */}
+        <NavItem
+          href="/marketing"
+          label="Marketing Spend"
+          icon={TrendingUpIcon}
+          active={isActive('/marketing')}
+        />
 
         {/* Install Calendar */}
         <NavItem

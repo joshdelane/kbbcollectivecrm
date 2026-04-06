@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts, getSourceCloseRates } from '@/lib/data'
+import { getStageCounts, getSourceCloseRates, getMarketingSpendTotal, getGrossMarginData } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import DashboardView from '@/components/dashboard/DashboardView'
 import type { Job } from '@/types'
@@ -59,6 +59,8 @@ export default async function DashboardPage({ searchParams }: Props) {
     { data: qualifiedLeads },
     stageCounts,
     closeRates,
+    marketingSpend,
+    grossMarginData,
   ] = await Promise.all([
     supabase.from('jobs').select('stage').is('deleted_at', null),
     supabase
@@ -70,6 +72,8 @@ export default async function DashboardPage({ searchParams }: Props) {
     supabase.from('jobs').select('rough_budget, enquiry_source').eq('stage', 'qualified_leads').is('deleted_at', null),
     getStageCounts(),
     getSourceCloseRates(),
+    getMarketingSpendTotal(start, end),
+    getGrossMarginData(),
   ])
 
   const jobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'order_valuation' | 'created_at'>[]) ?? []
@@ -85,6 +89,22 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   // Sales agreed: sum of order_valuation for all jobs with a value
   const salesAgreed = jobs.reduce((sum, j) => sum + (j.order_valuation ?? 0), 0)
+
+  // Sold count: jobs with a non-zero order_valuation (used for AOV)
+  const soldCount = jobs.filter((j) => j.order_valuation !== null && j.order_valuation > 0).length
+
+  // AOV: average order value = total sales / number of sales
+  const aov = soldCount > 0 ? Math.round(salesAgreed / soldCount) : null
+
+  // CPL: cost per qualified lead = total marketing spend / qualified leads in period
+  const cpl = marketingSpend > 0 && qualified > 0
+    ? Math.round(marketingSpend / qualified)
+    : null
+
+  // CPA: cost per acquisition = total marketing spend / sales in period
+  const cpa = marketingSpend > 0 && soldCount > 0
+    ? Math.round(marketingSpend / soldCount)
+    : null
 
   // Projected pipeline: sum of rough_budget × close_rate for all current qualified leads
   const projectedPipeline = (qualifiedLeads ?? []).reduce((sum, j) => {
@@ -109,9 +129,15 @@ export default async function DashboardPage({ searchParams }: Props) {
           periodDead={periodDead}
           conversionRate={conversionRate}
           salesAgreed={salesAgreed}
+          aov={aov}
+          cpl={cpl}
+          cpa={cpa}
+          grossMarginPct={grossMarginData.grossMarginPct}
+          grossMarginJobCount={grossMarginData.jobCount}
           projectedPipeline={projectedPipeline}
           stageCounts={stageCounts}
           totalJobs={totalJobsAllStages}
+          hasMarketingSpend={marketingSpend > 0}
         />
       </main>
     </div>

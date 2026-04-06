@@ -101,6 +101,26 @@ export interface StageCount {
   count: number
 }
 
+export const MARKETING_CHANNELS: { key: string; label: string }[] = [
+  { key: 'google_ads', label: 'Google Ads' },
+  { key: 'seo', label: 'SEO' },
+  { key: 'meta_ads', label: 'Meta Ads' },
+  { key: 'agency_costs', label: 'Agency Costs' },
+  { key: 'other', label: 'Other' },
+]
+
+export type MarketingChannel = 'google_ads' | 'seo' | 'meta_ads' | 'agency_costs' | 'other'
+
+export interface MarketingSpend {
+  id: string
+  organisation_id: string
+  channel: MarketingChannel
+  amount: number
+  spend_month: string // ISO date string — first day of month e.g. "2024-04-01"
+  notes: string | null
+  created_at: string
+}
+
 export const STAGES: { key: Stage; label: string; color: string }[] = [
   { key: 'enquiries', label: 'Enquiries', color: '#3B82F6' },
   { key: 'qualified_leads', label: 'Qualified Leads', color: '#8B5CF6' },

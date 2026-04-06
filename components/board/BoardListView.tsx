@@ -15,6 +15,7 @@ interface BoardListViewProps {
   profiles: Profile[]
   enquirySources: EnquirySource[]
   closeRates?: Record<string, number>
+  openJobId?: string
 }
 
 const STAGE_COLORS: Record<Stage, string> = {
@@ -147,8 +148,10 @@ const TD = ({ children, onClick }: { children: React.ReactNode; onClick?: () => 
   </td>
 )
 
-export default function BoardListView({ stage, initialJobs, profiles, enquirySources, closeRates = {} }: BoardListViewProps) {
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
+export default function BoardListView({ stage, initialJobs, profiles, enquirySources, closeRates = {}, openJobId }: BoardListViewProps) {
+  const [selectedJob, setSelectedJob] = useState<Job | null>(
+    () => (openJobId ? initialJobs.find((j) => j.id === openJobId) ?? null : null)
+  )
   const [isNewJobOpen, setIsNewJobOpen] = useState(false)
   const [sources, setSources] = useState<EnquirySource[]>(enquirySources)
   const [advancing, setAdvancing] = useState<string | null>(null)
