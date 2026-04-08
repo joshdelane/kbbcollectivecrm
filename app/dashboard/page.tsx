@@ -65,7 +65,7 @@ export default async function DashboardPage({ searchParams }: Props) {
     supabase.from('jobs').select('stage').is('deleted_at', null),
     supabase
       .from('jobs')
-      .select('stage, qualified_at, dead_at, order_valuation, created_at')
+      .select('stage, qualified_at, dead_at, sold_at, order_valuation, created_at')
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
       .is('deleted_at', null),
@@ -76,7 +76,7 @@ export default async function DashboardPage({ searchParams }: Props) {
     getGrossMarginData(),
   ])
 
-  const jobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'order_valuation' | 'created_at'>[]) ?? []
+  const jobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'sold_at' | 'order_valuation' | 'created_at'>[]) ?? []
   const totalJobsAllStages = allJobs?.length ?? 0
 
   // Conversion rate: qualified / (qualified + dead_from_enquiries)
@@ -106,6 +106,10 @@ export default async function DashboardPage({ searchParams }: Props) {
     ? Math.round(marketingSpend / soldCount)
     : null
 
+  // CVR: sales conversion rate = sales (sold_at set) / qualified opportunities in period
+  const cvrSalesCount = jobs.filter((j) => j.sold_at !== null).length
+  const cvr = qualified > 0 ? Math.round((cvrSalesCount / qualified) * 100) : null
+
   // Projected pipeline: sum of rough_budget × close_rate for all current qualified leads
   const projectedPipeline = (qualifiedLeads ?? []).reduce((sum, j) => {
     const rate = j.enquiry_source ? (closeRates[j.enquiry_source] ?? 0) : 0
@@ -132,6 +136,8 @@ export default async function DashboardPage({ searchParams }: Props) {
           aov={aov}
           cpl={cpl}
           cpa={cpa}
+          cvr={cvr}
+          cvrSalesCount={cvrSalesCount}
           grossMarginPct={grossMarginData.grossMarginPct}
           grossMarginJobCount={grossMarginData.jobCount}
           projectedPipeline={projectedPipeline}

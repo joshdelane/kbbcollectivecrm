@@ -15,6 +15,8 @@ interface DashboardViewProps {
   aov: number | null
   cpl: number | null
   cpa: number | null
+  cvr: number | null
+  cvrSalesCount: number
   grossMarginPct: number | null
   grossMarginJobCount: number
   projectedPipeline: number
@@ -80,6 +82,8 @@ export default function DashboardView({
   aov,
   cpl,
   cpa,
+  cvr,
+  cvrSalesCount,
   grossMarginPct,
   grossMarginJobCount,
   projectedPipeline,
@@ -157,7 +161,7 @@ export default function DashboardView({
       </div>
 
       {/* Financial metrics row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
           label="Sales Agreed"
           value={salesAgreed > 0 ? fmt(salesAgreed) : '£0'}
@@ -169,6 +173,12 @@ export default function DashboardView({
           value={aov !== null ? fmt(aov) : '—'}
           sub={aov !== null ? 'Average order value' : 'No sales this period'}
           accent={aov !== null}
+        />
+        <StatCard
+          label="CVR"
+          value={cvr !== null ? `${cvr}%` : '—'}
+          sub={cvr !== null ? `${cvrSalesCount} of ${periodQualified} qualified` : 'No qualified leads this period'}
+          accent={cvr !== null}
         />
         <StatCard
           label="Gross Margin %"

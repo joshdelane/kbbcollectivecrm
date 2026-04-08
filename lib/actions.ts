@@ -121,6 +121,20 @@ export async function markJobDead(jobId: string) {
   return { success: true }
 }
 
+export async function archiveQualifiedLead(jobId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ stage: 'archived' })
+    .eq('id', jobId)
+    .eq('stage', 'qualified_leads')
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function createJob(data: {
   customer_name: string
   phone?: string

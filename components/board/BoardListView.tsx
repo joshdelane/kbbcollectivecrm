@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon } from 'lucide-react'
-import { advanceJobStage, markJobDead, reviveJob } from '@/lib/actions'
+import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon, ArchiveIcon } from 'lucide-react'
+import { advanceJobStage, markJobDead, reviveJob, archiveQualifiedLead } from '@/lib/actions'
 import { STAGE_ACTIONS } from '@/types'
 import type { Job, Profile, EnquirySource, Stage } from '@/types'
 import JobDetailPanel from '@/components/jobs/JobDetailPanel'
@@ -89,7 +89,7 @@ function CheckCell({ checked }: { checked: boolean }) {
   )
 }
 
-function ActionCell({ job, onAdvance, onDead, onRevive }: { job: Job; onAdvance: () => void; onDead?: () => void; onRevive?: () => void }) {
+function ActionCell({ job, onAdvance, onDead, onRevive, onArchive }: { job: Job; onAdvance: () => void; onDead?: () => void; onRevive?: () => void; onArchive?: () => void }) {
   const action = STAGE_ACTIONS[job.stage]
   return (
     <span className="flex items-center gap-2 justify-end">
@@ -102,6 +102,17 @@ function ActionCell({ job, onAdvance, onDead, onRevive }: { job: Job; onAdvance:
         >
           <XCircleIcon size={11} />
           Dead
+        </button>
+      )}
+      {onArchive && job.stage === 'qualified_leads' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onArchive() }}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-opacity hover:opacity-90"
+          style={{ backgroundColor: '#1E252222', color: '#6B7280', border: '1px solid #2A3330' }}
+          title="Archive lead"
+        >
+          <ArchiveIcon size={11} />
+          Archive
         </button>
       )}
       {onRevive && job.stage === 'archived' && (
@@ -178,6 +189,14 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
     if (advancing) return
     setAdvancing(job.id)
     await reviveJob(job.id)
+    router.refresh()
+    setAdvancing(null)
+  }
+
+  const handleArchive = async (job: Job) => {
+    if (advancing) return
+    setAdvancing(job.id)
+    await archiveQualifiedLead(job.id)
     router.refresh()
     setAdvancing(null)
   }
@@ -317,6 +336,7 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
                       job={job}
                       onAdvance={() => handleAdvance(job)}
                       onDead={stage === 'enquiries' ? () => handleDead(job) : undefined}
+                      onArchive={stage === 'qualified_leads' ? () => handleArchive(job) : undefined}
                       onRevive={stage === 'archived' ? () => handleRevive(job) : undefined}
                     />
                   </TD>
