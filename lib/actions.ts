@@ -56,17 +56,27 @@ export async function advanceJobStage(jobId: string, currentStage: Stage) {
     [transition.timestampField]: new Date().toISOString(),
   }
 
-  // When moving from order processing to project management, copy the proposed
-  // install date to signed_off_install_date so the install calendar can use it.
-  if (currentStage === 'order_processing') {
-    const { data: job } = await supabase
-      .from('jobs')
-      .select('proposed_install_date')
-      .eq('id', jobId)
-      .single()
-    if (job?.proposed_install_date) {
-      updatePayload.signed_off_install_date = job.proposed_install_date
-    }
+  // Fetch current job fields needed for assignment propagation and install date copy.
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('assigned_to, designer_assigned, project_manager_assigned, installer_assigned, proposed_install_date')
+    .eq('id', jobId)
+    .single()
+
+  // Propagate assigned_to into the stage-specific assignee field if not already set.
+  if (currentStage === 'enquiries' && job?.assigned_to && !job.designer_assigned) {
+    updatePayload.designer_assigned = job.assigned_to
+  }
+  if (currentStage === 'qualified_leads' && job?.assigned_to && !job.project_manager_assigned) {
+    updatePayload.project_manager_assigned = job.assigned_to
+  }
+  if (currentStage === 'order_processing' && job?.assigned_to && !job.installer_assigned) {
+    updatePayload.installer_assigned = job.assigned_to
+  }
+
+  // Copy proposed install date when moving into project management.
+  if (currentStage === 'order_processing' && job?.proposed_install_date) {
+    updatePayload.signed_off_install_date = job.proposed_install_date
   }
 
   const { error } = await supabase
@@ -85,16 +95,30 @@ export async function reviveJob(jobId: string) {
 
   const { data: job } = await supabase
     .from('jobs')
-    .select('dead_at, signed_off_at')
+    .select('dead_at, signed_off_at, order_placed_at, sold_at, qualified_at')
     .eq('id', jobId)
     .eq('stage', 'archived')
     .single()
 
   if (!job) return { error: 'Job not found or not archived' }
 
-  const updatePayload: Record<string, unknown> = job.dead_at
-    ? { stage: 'enquiries', dead_at: null }
-    : { stage: 'project_management', signed_off_at: null }
+  // Determine the stage the job was in when it was archived.
+  let updatePayload: Record<string, unknown>
+  if (job.dead_at) {
+    // Marked dead from enquiries
+    updatePayload = { stage: 'enquiries', dead_at: null }
+  } else if (job.signed_off_at) {
+    // Completed from project management
+    updatePayload = { stage: 'project_management', signed_off_at: null }
+  } else if (job.order_placed_at) {
+    // Archived from order processing
+    updatePayload = { stage: 'order_processing' }
+  } else if (job.sold_at || job.qualified_at) {
+    // Archived from qualified leads
+    updatePayload = { stage: 'qualified_leads' }
+  } else {
+    updatePayload = { stage: 'enquiries' }
+  }
 
   const { error } = await supabase
     .from('jobs')
@@ -314,6 +338,34 @@ export async function createQuoteRevision(jobId: string) {
   return { success: true, revision: newRevision }
 }
 
+export async function revertJobToQualified(jobId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ stage: 'qualified_leads', sold_at: null })
+    .eq('id', jobId)
+    .eq('stage', 'order_processing')
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function updateJobEnquiryDate(jobId: string, date: string) {
+  if (!date) return { success: true }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ created_at: date })
+    .eq('id', jobId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function deleteJob(jobId: string) {
   const supabase = await createClient()
   const { error } = await supabase
@@ -391,6 +443,30 @@ export async function searchJobs(query: string): Promise<
     .order('created_at', { ascending: false })
     .limit(10)
   return (data ?? []) as Array<{ id: string; job_id: string; customer_name: string; stage: Stage }>
+}
+
+export async function getOrgLogo(): Promise<string | null> {
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return null
+  const { data } = await supabase
+    .from('organisations')
+    .select('logo_url')
+    .eq('id', orgId)
+    .single()
+  return data?.logo_url ?? null
+}
+
+export async function saveOrgLogo(logoUrl: string | null) {
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return { error: 'No organisation found' }
+  const { error } = await supabase
+    .from('organisations')
+    .update({ logo_url: logoUrl })
+    .eq('id', orgId)
+  if (error) return { error: error.message }
+  return { success: true }
 }
 
 export async function createEnquirySource(name: string) {

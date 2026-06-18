@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { PlusIcon, Trash2Icon, SaveIcon, Maximize2Icon, PrinterIcon, XIcon, CopyPlusIcon, TagIcon } from 'lucide-react'
-import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision } from '@/lib/actions'
+import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision, getOrgLogo, saveOrgLogo } from '@/lib/actions'
 import { QUOTE_CATEGORIES } from '@/types'
 import type { Job, QuoteCategory } from '@/types'
 
@@ -45,10 +45,12 @@ function ProofOfPurchase({
   job,
   lines,
   onClose,
+  logoUrl,
 }: {
   job: Job
   lines: LineItem[]
   onClose: () => void
+  logoUrl: string | null
 }) {
   const appliances = lines.filter((l) => l.category === 'Appliances' && l.description.trim())
 
@@ -85,8 +87,11 @@ function ProofOfPurchase({
           <div className="px-10 pt-10 pb-6" style={{ borderBottom: '2px solid #F3F4F6' }}>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold" style={{ color: '#1D211F' }}>Proof of Purchase</p>
-                <p className="text-sm mt-1" style={{ color: '#9CA3AF' }}>KBB Collective</p>
+                {logoUrl
+                  ? <img src={logoUrl} alt="Company logo" style={{ maxHeight: '64px', maxWidth: '200px', objectFit: 'contain' }} />
+                  : <p className="text-2xl font-bold" style={{ color: '#1D211F' }}>Proof of Purchase</p>
+                }
+                {logoUrl && <p className="text-2xl font-bold mt-2" style={{ color: '#1D211F' }}>Proof of Purchase</p>}
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold" style={{ color: '#B89763' }}>{job.job_id}</p>
@@ -157,13 +162,32 @@ function FullScreenQuote({
   revision,
   onClose,
   onToggleOrdered,
+  logoUrl,
+  onLogoSaved,
 }: {
   job: Job
   lines: LineItem[]
   revision: number
   onClose: () => void
   onToggleOrdered: (i: number) => void
+  logoUrl: string | null
+  onLogoSaved: (url: string | null) => void
 }) {
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const dataUrl = reader.result as string
+      const result = await saveOrgLogo(dataUrl)
+      if (!result.error) onLogoSaved(dataUrl)
+    }
+    reader.readAsDataURL(file)
+  }
+  async function handleRemoveLogo() {
+    const result = await saveOrgLogo(null)
+    if (!result.error) onLogoSaved(null)
+  }
   const totalRetail = lines.reduce((s, l) => s + parseNum(l.retail_price), 0)
   const totalCost = lines.reduce((s, l) => s + parseNum(l.cost_price), 0)
   const totalNet = lines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
@@ -203,6 +227,15 @@ function FullScreenQuote({
         <div className="no-print sticky top-0 z-[70] flex items-center justify-between px-6 py-3" style={{ backgroundColor: '#161A18', borderBottom: '1px solid #2A2F2D' }}>
           <span className="text-sm font-semibold text-white">{job.job_id} — R{revision}</span>
           <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer hover:opacity-80" style={{ backgroundColor: '#2A2F2D', color: '#9CA3AF' }}>
+              <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              {logoUrl ? 'Change Logo' : 'Upload Logo'}
+            </label>
+            {logoUrl && (
+              <button onClick={handleRemoveLogo} className="text-xs px-2 py-1 rounded hover:bg-white/10" style={{ color: '#9CA3AF' }}>
+                Remove Logo
+              </button>
+            )}
             <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: '#B89763' }}>
               <PrinterIcon size={14} />Print / Save PDF
             </button>
@@ -213,8 +246,11 @@ function FullScreenQuote({
           <div className="px-10 pt-10 pb-6" style={{ borderBottom: '2px solid #F3F4F6' }}>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-2xl font-bold" style={{ color: '#1D211F' }}>Quote</p>
-                <p className="text-sm mt-1" style={{ color: '#9CA3AF' }}>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                {logoUrl
+                  ? <img src={logoUrl} alt="Company logo" style={{ maxHeight: '64px', maxWidth: '200px', objectFit: 'contain' }} />
+                  : <p className="text-2xl font-bold" style={{ color: '#1D211F' }}>Quote</p>
+                }
+                <p className="text-sm mt-2" style={{ color: '#9CA3AF' }}>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold" style={{ color: '#B89763' }}>{job.job_id}</p>
@@ -267,7 +303,7 @@ function FullScreenQuote({
             {lines.length === 0 && <p className="text-sm text-center py-8" style={{ color: '#9CA3AF' }}>No line items</p>}
 
             {totalRetail > 0 && (
-              <div className="mt-4 ml-auto w-64">
+              <div className="mt-4 ml-auto w-72">
                 {hasDiscount && (
                   <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #E5E7EB' }}>
                     <span className="text-sm" style={{ color: '#6B7280' }}>Subtotal</span>
@@ -280,9 +316,17 @@ function FullScreenQuote({
                     <span className="text-sm font-medium" style={{ color: '#059669' }}>−£{fmt(totalDiscount)}</span>
                   </div>
                 )}
+                <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #E5E7EB' }}>
+                  <span className="text-sm" style={{ color: '#6B7280' }}>Net Total (ex. VAT)</span>
+                  <span className="text-sm font-medium" style={{ color: '#374151' }}>£{fmt(totalNet)}</span>
+                </div>
+                <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #E5E7EB' }}>
+                  <span className="text-sm" style={{ color: '#6B7280' }}>VAT (20%)</span>
+                  <span className="text-sm font-medium" style={{ color: '#374151' }}>£{fmt(totalNet * 0.2)}</span>
+                </div>
                 <div className="flex justify-between py-2" style={{ borderTop: '2px solid #1D211F' }}>
-                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>Total</span>
-                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalNet)}</span>
+                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>Gross Total</span>
+                  <span className="text-sm font-bold" style={{ color: '#1D211F' }}>£{fmt(totalNet * 1.2)}</span>
                 </div>
               </div>
             )}
@@ -336,6 +380,7 @@ export default function QuoteTab({ job }: { job: Job }) {
   const [fullScreen, setFullScreen] = useState(false)
   const [showPoP, setShowPoP] = useState(false)
   const [globalDiscount, setGlobalDiscount] = useState('')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
   const loadRevision = async (revNum: number) => {
     setLoading(true)
@@ -353,10 +398,12 @@ export default function QuoteTab({ job }: { job: Job }) {
 
   useEffect(() => {
     const init = async () => {
-      const [revNums, { lines: fetched, revision }] = await Promise.all([
+      const [revNums, { lines: fetched, revision }, logo] = await Promise.all([
         getQuoteRevisionNumbers(job.id),
         getQuoteLines(job.id),
+        getOrgLogo(),
       ])
+      setLogoUrl(logo)
       const latest = Math.max(...revNums, revision ?? 1)
       setRevisions(revNums.length > 0 ? revNums : [1])
       setLatestRevision(latest)
@@ -469,10 +516,12 @@ export default function QuoteTab({ job }: { job: Job }) {
           revision={activeRevision}
           onClose={() => setFullScreen(false)}
           onToggleOrdered={(i) => update(i, 'is_ordered', !lines[i].is_ordered)}
+          logoUrl={logoUrl}
+          onLogoSaved={setLogoUrl}
         />
       )}
       {showPoP && (
-        <ProofOfPurchase job={job} lines={lines} onClose={() => setShowPoP(false)} />
+        <ProofOfPurchase job={job} lines={lines} onClose={() => setShowPoP(false)} logoUrl={logoUrl} />
       )}
 
       <div className="flex flex-col flex-1 min-h-0">
