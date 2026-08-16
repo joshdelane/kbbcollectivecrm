@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { Stage } from '@/types'
+import type { BoardKey } from '@/types'
 
 interface DashboardViewProps {
   rangeLabel: string
@@ -23,7 +23,7 @@ interface DashboardViewProps {
   grossMarginPct: number | null
   grossMarginJobCount: number
   projectedPipeline: number
-  stageCounts: Partial<Record<Stage, number>>
+  stageCounts: Partial<Record<BoardKey, number>>
   totalJobs: number
   hasMarketingSpend: boolean
 }
@@ -359,7 +359,8 @@ export default function DashboardView({
             { label: 'Qualified Leads', count: stageCounts.qualified_leads ?? 0, color: '#8B5CF6' },
             { label: 'Order Processing', count: stageCounts.order_processing ?? 0, color: '#F59E0B' },
             { label: 'Project Management', count: stageCounts.project_management ?? 0, color: '#10B981' },
-            { label: 'Archived', count: stageCounts.archived ?? 0, color: '#6B7280' },
+            { label: 'Dead Leads', count: stageCounts.dead_leads ?? 0, color: '#EF4444' },
+            { label: 'Finished', count: stageCounts.finished ?? 0, color: '#6B7280' },
           ].map((row) => (
             <div key={row.label} className="flex items-center gap-4">
               <div className="flex items-center gap-2 w-48">

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Stage } from '@/types'
+import type { BoardKey } from '@/types'
 
 // Returns total marketing spend (sum of amount) for records whose spend_month
 // falls within the given date range.
@@ -64,15 +64,16 @@ export async function getGrossMarginData(): Promise<{ grossMarginPct: number | n
   return { grossMarginPct: Math.round(avg * 10) / 10, jobCount: margins.length }
 }
 
-export async function getStageCounts(): Promise<Record<Stage, number>> {
+export async function getStageCounts(): Promise<Record<BoardKey, number>> {
   const supabase = await createClient()
-  const { data } = await supabase.from('jobs').select('stage').is('deleted_at', null)
+  const { data } = await supabase.from('jobs').select('stage, signed_off_at').is('deleted_at', null)
 
   const counts: Record<string, number> = {}
   for (const row of data ?? []) {
-    counts[row.stage] = (counts[row.stage] ?? 0) + 1
+    const key = row.stage === 'archived' ? (row.signed_off_at ? 'finished' : 'dead_leads') : row.stage
+    counts[key] = (counts[key] ?? 0) + 1
   }
-  return counts as Record<Stage, number>
+  return counts as Record<BoardKey, number>
 }
 
 // Returns close rate (0–1) per enquiry source, based on historical sold vs dead jobs.

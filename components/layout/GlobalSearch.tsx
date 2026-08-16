@@ -4,29 +4,31 @@ import { useState, useRef, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { SearchIcon } from 'lucide-react'
 import { searchJobs } from '@/lib/actions'
-import type { Stage } from '@/types'
+import type { BoardKey } from '@/types'
 
-const STAGE_LABELS: Record<Stage, string> = {
+const STAGE_LABELS: Record<BoardKey, string> = {
   enquiries: 'Enquiries',
   qualified_leads: 'Qualified Leads',
   order_processing: 'Order Processing',
   project_management: 'Project Management',
-  archived: 'Archived',
+  dead_leads: 'Dead Leads',
+  finished: 'Finished',
 }
 
-const STAGE_COLORS: Record<Stage, string> = {
+const STAGE_COLORS: Record<BoardKey, string> = {
   enquiries: '#3B82F6',
   qualified_leads: '#8B5CF6',
   order_processing: '#F59E0B',
   project_management: '#10B981',
-  archived: '#6B7280',
+  dead_leads: '#EF4444',
+  finished: '#6B7280',
 }
 
 type SearchResult = {
   id: string
   job_id: string
   customer_name: string
-  stage: Stage
+  board: BoardKey
 }
 
 export default function GlobalSearch() {
@@ -76,7 +78,7 @@ export default function GlobalSearch() {
     setQuery('')
     setResults([])
     setOpen(false)
-    router.push(`/board/${result.stage}?open=${result.id}`)
+    router.push(`/board/${result.board}?open=${result.id}`)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -131,14 +133,14 @@ export default function GlobalSearch() {
             >
               <span
                 className="w-1.5 h-1.5 rounded-full flex-none"
-                style={{ backgroundColor: STAGE_COLORS[r.stage] }}
+                style={{ backgroundColor: STAGE_COLORS[r.board] }}
               />
               <span className="flex-1 min-w-0">
                 <span className="block text-sm font-medium text-white truncate">{r.customer_name}</span>
                 <span className="block text-xs" style={{ color: '#6B7280' }}>
                   <span style={{ color: '#B89763' }}>{r.job_id}</span>
                   {' · '}
-                  {STAGE_LABELS[r.stage]}
+                  {STAGE_LABELS[r.board]}
                 </span>
               </span>
             </button>

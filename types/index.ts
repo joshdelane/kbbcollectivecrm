@@ -5,6 +5,10 @@ export type Stage =
   | 'project_management'
   | 'archived'
 
+// Boards shown in the UI. The DB only stores 'archived' on the job row — the
+// dead-leads vs finished split is derived from dead_at / signed_off_at.
+export type BoardKey = Exclude<Stage, 'archived'> | 'dead_leads' | 'finished'
+
 export interface Profile {
   id: string
   full_name: string
@@ -121,12 +125,24 @@ export interface MarketingSpend {
   created_at: string
 }
 
+// Real job progression order, including 'archived' — used where the actual
+// DB stage (not the split board view) determines progress, e.g. JobDetailPanel.
 export const STAGES: { key: Stage; label: string; color: string }[] = [
   { key: 'enquiries', label: 'Enquiries', color: '#3B82F6' },
   { key: 'qualified_leads', label: 'Qualified Leads', color: '#8B5CF6' },
   { key: 'order_processing', label: 'Order Processing', color: '#F59E0B' },
   { key: 'project_management', label: 'Project Management', color: '#10B981' },
   { key: 'archived', label: 'Archived', color: '#6B7280' },
+]
+
+// Boards shown in the sidebar/search — 'archived' is split into dead_leads/finished.
+export const BOARDS: { key: BoardKey; label: string; color: string }[] = [
+  { key: 'enquiries', label: 'Enquiries', color: '#3B82F6' },
+  { key: 'qualified_leads', label: 'Qualified Leads', color: '#8B5CF6' },
+  { key: 'order_processing', label: 'Order Processing', color: '#F59E0B' },
+  { key: 'project_management', label: 'Project Management', color: '#10B981' },
+  { key: 'dead_leads', label: 'Dead Leads', color: '#EF4444' },
+  { key: 'finished', label: 'Finished', color: '#6B7280' },
 ]
 
 export const STAGE_ACTIONS: Partial<Record<Stage, { label: string; nextStage: Stage }>> = {

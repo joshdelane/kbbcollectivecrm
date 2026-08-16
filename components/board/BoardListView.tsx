@@ -1,16 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon, ArchiveIcon } from 'lucide-react'
+import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon, ArchiveIcon, ChevronUpIcon, ChevronDownIcon } from 'lucide-react'
 import { advanceJobStage, markJobDead, reviveJob, archiveQualifiedLead } from '@/lib/actions'
 import { STAGE_ACTIONS } from '@/types'
-import type { Job, Profile, EnquirySource, Stage } from '@/types'
+import type { Job, Profile, EnquirySource, BoardKey } from '@/types'
 import JobDetailPanel from '@/components/jobs/JobDetailPanel'
 import NewJobModal from '@/components/jobs/NewJobModal'
 
 interface BoardListViewProps {
-  stage: Stage
+  board: BoardKey
   initialJobs: Job[]
   profiles: Profile[]
   enquirySources: EnquirySource[]
@@ -18,20 +18,22 @@ interface BoardListViewProps {
   openJobId?: string
 }
 
-const STAGE_COLORS: Record<Stage, string> = {
+const STAGE_COLORS: Record<BoardKey, string> = {
   enquiries: '#3B82F6',
   qualified_leads: '#8B5CF6',
   order_processing: '#F59E0B',
   project_management: '#10B981',
-  archived: '#6B7280',
+  dead_leads: '#EF4444',
+  finished: '#6B7280',
 }
 
-const STAGE_LABELS: Record<Stage, string> = {
+const STAGE_LABELS: Record<BoardKey, string> = {
   enquiries: 'Enquiries',
   qualified_leads: 'Qualified Leads',
   order_processing: 'Order Processing',
   project_management: 'Project Management',
-  archived: 'Archived',
+  dead_leads: 'Dead Leads',
+  finished: 'Finished',
 }
 
 function fmt(n: number | null | undefined, prefix = '£') {
@@ -140,12 +142,27 @@ function ActionCell({ job, onAdvance, onDead, onRevive, onArchive }: { job: Job;
   )
 }
 
-const TH = ({ children, width }: { children?: React.ReactNode; width?: string }) => (
+type SortDir = 'asc' | 'desc'
+interface SortState { field: string; dir: SortDir }
+
+const TH = ({ children, width, sortKey, sort, onSort }: {
+  children?: React.ReactNode
+  width?: string
+  sortKey?: string
+  sort?: SortState | null
+  onSort?: (key: string) => void
+}) => (
   <th
-    className="text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
-    style={{ color: '#6B7280', width }}
+    className={`text-left px-3 py-2.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap${sortKey ? ' cursor-pointer select-none' : ''}`}
+    style={{ color: sortKey && sort?.field === sortKey ? '#D1D5DB' : '#6B7280', width }}
+    onClick={sortKey && onSort ? () => onSort(sortKey) : undefined}
   >
-    {children}
+    <span className="flex items-center gap-1">
+      {children}
+      {sortKey && sort?.field === sortKey && (
+        sort.dir === 'asc' ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />
+      )}
+    </span>
   </th>
 )
 
@@ -159,15 +176,45 @@ const TD = ({ children, onClick }: { children: React.ReactNode; onClick?: () => 
   </td>
 )
 
-export default function BoardListView({ stage, initialJobs, profiles, enquirySources, closeRates = {}, openJobId }: BoardListViewProps) {
+export default function BoardListView({ board, initialJobs, profiles, enquirySources, closeRates = {}, openJobId }: BoardListViewProps) {
   const [selectedJob, setSelectedJob] = useState<Job | null>(
     () => (openJobId ? initialJobs.find((j) => j.id === openJobId) ?? null : null)
   )
   const [isNewJobOpen, setIsNewJobOpen] = useState(false)
   const [sources, setSources] = useState<EnquirySource[]>(enquirySources)
   const [advancing, setAdvancing] = useState<string | null>(null)
+  const [sort, setSort] = useState<SortState | null>(null)
+  const [filterMinValue, setFilterMinValue] = useState('')
   const router = useRouter()
-  const color = STAGE_COLORS[stage]
+  const color = STAGE_COLORS[board]
+  const isArchivedBoard = board === 'dead_leads' || board === 'finished'
+
+  const handleSort = (field: string) =>
+    setSort((prev) => prev?.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' })
+
+  const displayJobs = useMemo(() => {
+    let jobs = [...initialJobs]
+    const minVal = filterMinValue !== '' ? parseFloat(filterMinValue) : null
+    if (minVal !== null && !isNaN(minVal)) {
+      jobs = jobs.filter((j) => {
+        const val = j.order_valuation ?? j.quote_total ?? j.rough_budget ?? 0
+        return val >= minVal
+      })
+    }
+    if (sort) {
+      jobs.sort((a, b) => {
+        const va = (a as unknown as Record<string, unknown>)[sort.field]
+        const vb = (b as unknown as Record<string, unknown>)[sort.field]
+        if (va == null) return 1
+        if (vb == null) return -1
+        const cmp = typeof va === 'string' && typeof vb === 'string'
+          ? va.localeCompare(vb)
+          : (va as number) - (vb as number)
+        return sort.dir === 'asc' ? cmp : -cmp
+      })
+    }
+    return jobs
+  }, [initialJobs, sort, filterMinValue])
 
   const handleAdvance = async (job: Job) => {
     if (advancing) return
@@ -210,7 +257,7 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
       >
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-          <h1 className="text-xl font-bold text-white">{STAGE_LABELS[stage]}</h1>
+          <h1 className="text-xl font-bold text-white">{STAGE_LABELS[board]}</h1>
           <span
             className="text-xs font-bold px-2.5 py-1 rounded-full"
             style={{ backgroundColor: color + '22', color }}
@@ -218,7 +265,7 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
             {initialJobs.length}
           </span>
         </div>
-        {stage === 'enquiries' && (
+        {board === 'enquiries' && (
           <button
             onClick={() => setIsNewJobOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
@@ -230,6 +277,35 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
         )}
       </header>
 
+      {/* Filter bar */}
+      <div className="flex items-center gap-4 px-8 py-3 flex-none" style={{ borderBottom: '1px solid #252B28', backgroundColor: '#161A18' }}>
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#4A5250' }}>Filter</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: '#6B7280' }}>Min value</span>
+          <div className="relative flex items-center">
+            <span className="absolute left-2.5 text-xs pointer-events-none" style={{ color: '#6B7280' }}>£</span>
+            <input
+              type="number"
+              placeholder="0"
+              value={filterMinValue}
+              onChange={(e) => setFilterMinValue(e.target.value)}
+              className="text-xs rounded-md pl-6 pr-3 py-1.5 w-28 outline-none"
+              style={{ backgroundColor: '#252B28', border: '1px solid #2A2F2D', color: '#D1D5DB' }}
+            />
+          </div>
+        </div>
+        {(filterMinValue || sort) && (
+          <button onClick={() => { setFilterMinValue(''); setSort(null) }} className="text-xs transition-colors hover:text-white" style={{ color: '#6B7280' }}>
+            Clear
+          </button>
+        )}
+        {displayJobs.length !== initialJobs.length && (
+          <span className="text-xs ml-auto" style={{ color: '#6B7280' }}>
+            Showing {displayJobs.length} of {initialJobs.length}
+          </span>
+        )}
+      </div>
+
       {/* Table */}
       <div className="flex-1 overflow-x-auto px-8 py-6">
         {initialJobs.length === 0 ? (
@@ -239,44 +315,47 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
             </div>
             <p className="text-sm font-medium text-white">No items here</p>
             <p className="text-xs mt-1" style={{ color: '#6B7280' }}>
-              {stage === 'enquiries' ? 'Create a new enquiry to get started.' : 'Items will appear here when advanced to this stage.'}
+              {board === 'enquiries' ? 'Create a new enquiry to get started.' : 'Items will appear here when advanced to this stage.'}
             </p>
           </div>
         ) : (
+          <>
+          {displayJobs.length === 0 && (
+            <p className="text-sm text-center py-12" style={{ color: '#6B7280' }}>No results match your filter.</p>
+          )}
+          {displayJobs.length > 0 && (
           <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead>
               <tr style={{ backgroundColor: '#1E2422' }}>
-                {/* Common columns */}
-                <TH width="120px">Job ID</TH>
-                <TH>Customer</TH>
-                {stage === 'enquiries' && <TH>Phone</TH>}
-                {stage === 'enquiries' && <TH>Source</TH>}
-                {stage === 'enquiries' && <TH>Assigned</TH>}
-                {stage === 'qualified_leads' && <TH>Value</TH>}
-                {stage === 'qualified_leads' && <TH>Designer</TH>}
-                {stage === 'qualified_leads' && <TH>Qualified</TH>}
-                {stage === 'qualified_leads' && <TH>Probability</TH>}
-                {stage === 'order_processing' && <TH>Valuation</TH>}
-                {stage === 'order_processing' && <TH>Deposit</TH>}
-                {stage === 'order_processing' && <TH>Install Date</TH>}
-                {stage === 'order_processing' && <TH>Fit Days</TH>}
-                {stage === 'order_processing' && <TH>Site Dims</TH>}
-                {stage === 'order_processing' && <TH>Designer</TH>}
-                {stage === 'order_processing' && <TH>Project Manager</TH>}
-                {stage === 'project_management' && <TH>Valuation</TH>}
-                {stage === 'project_management' && <TH>Install Date</TH>}
-                {stage === 'project_management' && <TH>Site Dims</TH>}
-                {stage === 'project_management' && <TH>Installer</TH>}
-                {stage === 'project_management' && <TH>Signed Off</TH>}
-                {stage === 'archived' && <TH>Source</TH>}
-                {stage === 'archived' && <TH>Value</TH>}
-                {stage === 'archived' && <TH>Outcome</TH>}
-                {stage === 'archived' && <TH>Date</TH>}
+                <TH width="120px" sortKey="job_id" sort={sort} onSort={handleSort}>Job ID</TH>
+                <TH sortKey="customer_name" sort={sort} onSort={handleSort}>Customer</TH>
+                {board === 'enquiries' && <TH>Phone</TH>}
+                {board === 'enquiries' && <TH>Source</TH>}
+                {board === 'enquiries' && <TH>Assigned</TH>}
+                {board === 'qualified_leads' && <TH sortKey="quote_total" sort={sort} onSort={handleSort}>Value</TH>}
+                {board === 'qualified_leads' && <TH>Designer</TH>}
+                {board === 'qualified_leads' && <TH sortKey="qualified_at" sort={sort} onSort={handleSort}>Qualified</TH>}
+                {board === 'qualified_leads' && <TH>Probability</TH>}
+                {board === 'order_processing' && <TH sortKey="order_valuation" sort={sort} onSort={handleSort}>Valuation</TH>}
+                {board === 'order_processing' && <TH>Deposit</TH>}
+                {board === 'order_processing' && <TH sortKey="proposed_install_date" sort={sort} onSort={handleSort}>Install Date</TH>}
+                {board === 'order_processing' && <TH>Fit Days</TH>}
+                {board === 'order_processing' && <TH>Site Dims</TH>}
+                {board === 'order_processing' && <TH>Designer</TH>}
+                {board === 'order_processing' && <TH>Project Manager</TH>}
+                {board === 'project_management' && <TH sortKey="order_valuation" sort={sort} onSort={handleSort}>Valuation</TH>}
+                {board === 'project_management' && <TH sortKey="signed_off_install_date" sort={sort} onSort={handleSort}>Install Date</TH>}
+                {board === 'project_management' && <TH>Site Dims</TH>}
+                {board === 'project_management' && <TH>Installer</TH>}
+                {board === 'project_management' && <TH>Signed Off</TH>}
+                {isArchivedBoard && <TH>Source</TH>}
+                {isArchivedBoard && <TH sortKey="order_valuation" sort={sort} onSort={handleSort}>Value</TH>}
+                {isArchivedBoard && <TH sortKey="created_at" sort={sort} onSort={handleSort}>Date</TH>}
                 <TH width="160px"></TH>
               </tr>
             </thead>
             <tbody>
-              {initialJobs.map((job) => (
+              {displayJobs.map((job) => (
                 <tr
                   key={job.id}
                   className="cursor-pointer transition-colors hover:bg-white/2"
@@ -293,57 +372,48 @@ export default function BoardListView({ stage, initialJobs, profiles, enquirySou
                     </div>
                   </TD>
 
-                  {stage === 'enquiries' && <TD>{job.phone ?? '—'}</TD>}
-                  {stage === 'enquiries' && <TD>{job.enquiry_source ?? '—'}</TD>}
-                  {stage === 'enquiries' && <TD><ProfileCell profileId={job.assigned_to} profiles={profiles} /></TD>}
+                  {board === 'enquiries' && <TD>{job.phone ?? '—'}</TD>}
+                  {board === 'enquiries' && <TD>{job.enquiry_source ?? '—'}</TD>}
+                  {board === 'enquiries' && <TD><ProfileCell profileId={job.assigned_to} profiles={profiles} /></TD>}
 
-                  {stage === 'qualified_leads' && <TD><span className="font-semibold text-white">{fmt(job.quote_total)}</span></TD>}
-                  {stage === 'qualified_leads' && <TD><ProfileCell profileId={job.designer_assigned} profiles={profiles} /></TD>}
-                  {stage === 'qualified_leads' && <TD>{fmtDate(job.qualified_at)}</TD>}
-                  {stage === 'qualified_leads' && <TD><ProbabilityCell source={job.enquiry_source} closeRates={closeRates} /></TD>}
+                  {board === 'qualified_leads' && <TD><span className="font-semibold text-white">{fmt(job.quote_total)}</span></TD>}
+                  {board === 'qualified_leads' && <TD><ProfileCell profileId={job.designer_assigned} profiles={profiles} /></TD>}
+                  {board === 'qualified_leads' && <TD>{fmtDate(job.qualified_at)}</TD>}
+                  {board === 'qualified_leads' && <TD><ProbabilityCell source={job.enquiry_source} closeRates={closeRates} /></TD>}
 
-                  {stage === 'order_processing' && <TD><span className="font-semibold text-white">{fmt(job.order_valuation)}</span></TD>}
-                  {stage === 'order_processing' && <TD>{fmt(job.deposit_amount)}</TD>}
-                  {stage === 'order_processing' && <TD>{fmtDate(job.proposed_install_date)}</TD>}
-                  {stage === 'order_processing' && <TD>{job.fitting_days ? <span className="text-white font-medium">{job.fitting_days}d</span> : <span style={{ color: '#4A5250' }}>—</span>}</TD>}
-                  {stage === 'order_processing' && <TD><CheckCell checked={job.site_dimensions_captured} /></TD>}
-                  {stage === 'order_processing' && <TD><ProfileCell profileId={job.designer_assigned} profiles={profiles} /></TD>}
-                  {stage === 'order_processing' && <TD><ProfileCell profileId={job.project_manager_assigned} profiles={profiles} /></TD>}
+                  {board === 'order_processing' && <TD><span className="font-semibold text-white">{fmt(job.order_valuation)}</span></TD>}
+                  {board === 'order_processing' && <TD>{fmt(job.deposit_amount)}</TD>}
+                  {board === 'order_processing' && <TD>{fmtDate(job.proposed_install_date)}</TD>}
+                  {board === 'order_processing' && <TD>{job.fitting_days ? <span className="text-white font-medium">{job.fitting_days}d</span> : <span style={{ color: '#4A5250' }}>—</span>}</TD>}
+                  {board === 'order_processing' && <TD><CheckCell checked={job.site_dimensions_captured} /></TD>}
+                  {board === 'order_processing' && <TD><ProfileCell profileId={job.designer_assigned} profiles={profiles} /></TD>}
+                  {board === 'order_processing' && <TD><ProfileCell profileId={job.project_manager_assigned} profiles={profiles} /></TD>}
 
-                  {stage === 'project_management' && <TD><span className="font-semibold text-white">{fmt(job.order_valuation)}</span></TD>}
-                  {stage === 'project_management' && <TD>{fmtDate(job.signed_off_install_date)}</TD>}
-                  {stage === 'project_management' && <TD><CheckCell checked={job.pm_site_dimensions_captured} /></TD>}
-                  {stage === 'project_management' && <TD><ProfileCell profileId={job.installer_assigned} profiles={profiles} /></TD>}
-                  {stage === 'project_management' && <TD><CheckCell checked={job.project_signed_off} /></TD>}
+                  {board === 'project_management' && <TD><span className="font-semibold text-white">{fmt(job.order_valuation)}</span></TD>}
+                  {board === 'project_management' && <TD>{fmtDate(job.signed_off_install_date)}</TD>}
+                  {board === 'project_management' && <TD><CheckCell checked={job.pm_site_dimensions_captured} /></TD>}
+                  {board === 'project_management' && <TD><ProfileCell profileId={job.installer_assigned} profiles={profiles} /></TD>}
+                  {board === 'project_management' && <TD><CheckCell checked={job.project_signed_off} /></TD>}
 
-                  {stage === 'archived' && <TD>{job.enquiry_source ?? '—'}</TD>}
-                  {stage === 'archived' && <TD>{fmt(job.order_valuation ?? job.quote_total)}</TD>}
-                  {stage === 'archived' && (
-                    <TD>
-                      {job.dead_at ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#3B151522', color: '#EF4444' }}>Dead lead</span>
-                      ) : job.signed_off_at ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#05402022', color: '#10B981' }}>Completed</span>
-                      ) : (
-                        <span style={{ color: '#6B7280' }}>—</span>
-                      )}
-                    </TD>
-                  )}
-                  {stage === 'archived' && <TD>{fmtDate(job.dead_at ?? job.signed_off_at ?? job.created_at)}</TD>}
+                  {isArchivedBoard && <TD>{job.enquiry_source ?? '—'}</TD>}
+                  {isArchivedBoard && <TD>{fmt(job.order_valuation ?? job.quote_total)}</TD>}
+                  {isArchivedBoard && <TD>{fmtDate(job.dead_at ?? job.signed_off_at ?? job.created_at)}</TD>}
 
                   <TD>
                     <ActionCell
                       job={job}
                       onAdvance={() => handleAdvance(job)}
-                      onDead={stage === 'enquiries' ? () => handleDead(job) : undefined}
-                      onArchive={stage === 'qualified_leads' ? () => handleArchive(job) : undefined}
-                      onRevive={stage === 'archived' ? () => handleRevive(job) : undefined}
+                      onDead={board === 'enquiries' ? () => handleDead(job) : undefined}
+                      onArchive={board === 'qualified_leads' ? () => handleArchive(job) : undefined}
+                      onRevive={isArchivedBoard ? () => handleRevive(job) : undefined}
                     />
                   </TD>
                 </tr>
               ))}
             </tbody>
           </table>
+          )}
+          </>
         )}
       </div>
 

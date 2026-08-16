@@ -9,6 +9,7 @@ import {
   PackageIcon,
   HardHatIcon,
   ArchiveIcon,
+  XCircleIcon,
   UsersIcon,
   LogOutIcon,
   CalendarDaysIcon,
@@ -17,18 +18,19 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import GlobalSearch from './GlobalSearch'
-import type { Stage } from '@/types'
+import type { BoardKey } from '@/types'
 
 interface SidebarProps {
-  stageCounts: Partial<Record<Stage, number>>
+  stageCounts: Partial<Record<BoardKey, number>>
 }
 
-const NAV_BOARDS: { key: Stage; label: string; href: string; icon: React.ElementType }[] = [
+const NAV_BOARDS: { key: BoardKey; label: string; href: string; icon: React.ElementType }[] = [
   { key: 'enquiries', label: 'Enquiries', href: '/board/enquiries', icon: InboxIcon },
   { key: 'qualified_leads', label: 'Qualified Leads', href: '/board/qualified_leads', icon: BadgeCheckIcon },
   { key: 'order_processing', label: 'Order Processing', href: '/board/order_processing', icon: PackageIcon },
   { key: 'project_management', label: 'Project Management', href: '/board/project_management', icon: HardHatIcon },
-  { key: 'archived', label: 'Archived', href: '/board/archived', icon: ArchiveIcon },
+  { key: 'dead_leads', label: 'Dead Leads', href: '/board/dead_leads', icon: XCircleIcon },
+  { key: 'finished', label: 'Finished', href: '/board/finished', icon: ArchiveIcon },
 ]
 
 export default function Sidebar({ stageCounts }: SidebarProps) {

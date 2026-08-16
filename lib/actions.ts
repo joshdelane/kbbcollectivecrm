@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { Job, Stage } from '@/types'
+import type { Job, Stage, BoardKey } from '@/types'
 
 // ── Helper: get current user's organisation_id ────────────────
 async function getOrgId(): Promise<string | null> {
@@ -430,19 +430,26 @@ export async function deleteMarketingSpend(id: string) {
 // ── Global Job Search ─────────────────────────────────────────────
 
 export async function searchJobs(query: string): Promise<
-  Array<{ id: string; job_id: string; customer_name: string; stage: Stage }>
+  Array<{ id: string; job_id: string; customer_name: string; board: BoardKey }>
 > {
   if (!query.trim()) return []
   const supabase = await createClient()
   const q = query.trim()
   const { data } = await supabase
     .from('jobs')
-    .select('id, job_id, customer_name, stage')
+    .select('id, job_id, customer_name, stage, signed_off_at')
     .is('deleted_at', null)
     .or(`customer_name.ilike.%${q}%,job_id.ilike.%${q}%`)
     .order('created_at', { ascending: false })
     .limit(10)
-  return (data ?? []) as Array<{ id: string; job_id: string; customer_name: string; stage: Stage }>
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    job_id: row.job_id,
+    customer_name: row.customer_name,
+    board: (row.stage === 'archived'
+      ? (row.signed_off_at ? 'finished' : 'dead_leads')
+      : row.stage) as BoardKey,
+  }))
 }
 
 export async function getOrgLogo(): Promise<string | null> {
