@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts } from '@/lib/data'
+import { getStageCounts, getTodoCount } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import MarketingView from '@/components/marketing/MarketingView'
 import type { MarketingSpend } from '@/types'
@@ -10,17 +10,18 @@ export default async function MarketingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: spendRows }, stageCounts] = await Promise.all([
+  const [{ data: spendRows }, stageCounts, todoCount] = await Promise.all([
     supabase
       .from('marketing_spend')
       .select('*')
       .order('spend_month', { ascending: false }),
     getStageCounts(),
+    getTodoCount(),
   ])
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
-      <Sidebar stageCounts={stageCounts} />
+      <Sidebar stageCounts={stageCounts} todoCount={todoCount} />
       <main className="flex-1 overflow-y-auto">
         <MarketingView initialSpend={(spendRows as MarketingSpend[]) ?? []} />
       </main>

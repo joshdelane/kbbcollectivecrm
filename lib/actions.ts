@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { Job, Stage, BoardKey } from '@/types'
+import type { Job, Stage, BoardKey, SnagItem } from '@/types'
 
 // ── Helper: get current user's organisation_id ────────────────
 async function getOrgId(): Promise<string | null> {
@@ -352,6 +352,24 @@ export async function revertJobToQualified(jobId: string) {
   return { success: true }
 }
 
+// Rolls a job back from Project Management to Order Processing — for when it
+// was advanced by mistake. Clears order_placed_at (the timestamp that
+// advancing set) and signed_off_install_date (which advancing copied over
+// from proposed_install_date), so a later re-advance starts clean.
+export async function revertJobToOrderProcessing(jobId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ stage: 'order_processing', order_placed_at: null, signed_off_install_date: null })
+    .eq('id', jobId)
+    .eq('stage', 'project_management')
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function updateJobEnquiryDate(jobId: string, date: string) {
   if (!date) return { success: true }
   const supabase = await createClient()
@@ -490,4 +508,99 @@ export async function createEnquirySource(name: string) {
   if (error) return { error: error.message }
 
   return { success: true, source: data }
+}
+
+export async function updateEnquirySource(id: string, name: string) {
+  if (!name.trim()) return { error: 'Name cannot be empty' }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('enquiry_sources')
+    .update({ name: name.trim() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Organisation terms & conditions (printed on quotes) ───────────
+
+export async function getOrgTermsAndConditions(): Promise<string | null> {
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return null
+  const { data } = await supabase
+    .from('organisations')
+    .select('terms_and_conditions')
+    .eq('id', orgId)
+    .single()
+  return data?.terms_and_conditions ?? null
+}
+
+export async function saveOrgTermsAndConditions(text: string) {
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return { error: 'No organisation found' }
+  const { error } = await supabase
+    .from('organisations')
+    .update({ terms_and_conditions: text.trim() || null })
+    .eq('id', orgId)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Snag list checklist (Project Management) ──────────────────────
+
+export async function getSnagItems(jobId: string): Promise<SnagItem[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('snag_items')
+    .select('*')
+    .eq('job_id', jobId)
+    .order('sort_order', { ascending: true })
+  return (data as SnagItem[]) ?? []
+}
+
+export async function addSnagItem(jobId: string, description: string) {
+  if (!description.trim()) return { error: 'Description cannot be empty' }
+  const supabase = await createClient()
+  const { data: existing } = await supabase
+    .from('snag_items')
+    .select('sort_order')
+    .eq('job_id', jobId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+  const nextSort = existing && existing.length > 0 ? existing[0].sort_order + 1 : 0
+
+  const { data, error } = await supabase
+    .from('snag_items')
+    .insert([{ job_id: jobId, description: description.trim(), sort_order: nextSort }])
+    .select()
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true, item: data as SnagItem }
+}
+
+export async function toggleSnagItem(id: string, isDone: boolean) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('snag_items')
+    .update({ is_done: isDone })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function deleteSnagItem(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('snag_items')
+    .delete()
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
 }

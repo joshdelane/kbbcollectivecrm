@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts, getSourceCloseRates, getMarketingSpendTotal, getGrossMarginData } from '@/lib/data'
+import { getStageCounts, getSourceCloseRates, getMarketingSpendTotal, getGrossMarginData, getTodoCount } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import DashboardView from '@/components/dashboard/DashboardView'
 import type { Job } from '@/types'
@@ -63,6 +63,7 @@ export default async function DashboardPage({ searchParams }: Props) {
     closeRates,
     marketingSpend,
     grossMarginData,
+    todoCount,
   ] = await Promise.all([
     supabase.from('jobs').select('stage').is('deleted_at', null),
     supabase
@@ -82,6 +83,7 @@ export default async function DashboardPage({ searchParams }: Props) {
     getSourceCloseRates(),
     getMarketingSpendTotal(start, end),
     getGrossMarginData(),
+    getTodoCount(),
   ])
 
   const jobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'created_at'>[]) ?? []
@@ -132,7 +134,7 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
-      <Sidebar stageCounts={stageCounts} />
+      <Sidebar stageCounts={stageCounts} todoCount={todoCount} />
       <main className="flex-1 overflow-y-auto">
         <DashboardView
           rangeLabel={rangeLabel}

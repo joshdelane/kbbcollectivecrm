@@ -22,6 +22,7 @@ import type { BoardKey } from '@/types'
 
 interface SidebarProps {
   stageCounts: Partial<Record<BoardKey, number>>
+  todoCount?: number
 }
 
 const NAV_BOARDS: { key: BoardKey; label: string; href: string; icon: React.ElementType }[] = [
@@ -33,7 +34,7 @@ const NAV_BOARDS: { key: BoardKey; label: string; href: string; icon: React.Elem
   { key: 'finished', label: 'Finished', href: '/board/finished', icon: ArchiveIcon },
 ]
 
-export default function Sidebar({ stageCounts }: SidebarProps) {
+export default function Sidebar({ stageCounts, todoCount = 0 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -119,6 +120,8 @@ export default function Sidebar({ stageCounts }: SidebarProps) {
           label="To-Do"
           icon={ClipboardListIcon}
           active={isActive('/todo')}
+          count={todoCount}
+          notify
         />
 
         {/* Team */}
@@ -151,12 +154,15 @@ function NavItem({
   icon: Icon,
   active,
   count,
+  notify,
 }: {
   href: string
   label: string
   icon: React.ElementType
   active: boolean
   count?: number
+  /** Red, always-visible badge to draw attention — for outstanding items rather than a simple board tally. */
+  notify?: boolean
 }) {
   return (
     <Link
@@ -176,7 +182,9 @@ function NavItem({
         <span
           className="text-xs font-bold px-1.5 py-0.5 rounded-full"
           style={
-            active
+            notify
+              ? { backgroundColor: '#EF4444', color: '#FFFFFF' }
+              : active
               ? { backgroundColor: '#B8976330', color: '#B89763' }
               : { backgroundColor: '#252B28', color: '#6B7280' }
           }

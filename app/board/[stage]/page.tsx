@@ -1,6 +1,6 @@
 import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts, getSourceCloseRates } from '@/lib/data'
+import { getStageCounts, getSourceCloseRates, getTodoCount } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import BoardListView from '@/components/board/BoardListView'
 import type { Job, Profile, EnquirySource, BoardKey } from '@/types'
@@ -54,17 +54,19 @@ export default async function BoardStagePage({ params, searchParams }: Props) {
     { data: enquirySources },
     stageCounts,
     closeRates,
+    todoCount,
   ] = await Promise.all([
     jobsQuery,
     supabase.from('profiles').select('*').order('full_name'),
     supabase.from('enquiry_sources').select('*').order('sort_order'),
     getStageCounts(),
     getSourceCloseRates(),
+    getTodoCount(),
   ])
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
-      <Sidebar stageCounts={stageCounts} />
+      <Sidebar stageCounts={stageCounts} todoCount={todoCount} />
       <main className="flex-1 overflow-y-auto">
         <BoardListView
           board={board}

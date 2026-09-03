@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { XIcon, SaveIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { updateJob, createEnquirySource, deleteJob } from '@/lib/actions'
+import { updateJob, createEnquirySource, deleteJob, revertJobToOrderProcessing } from '@/lib/actions'
 import { STAGES } from '@/types'
 import type { Job, Profile, Stage, EnquirySource } from '@/types'
 import QuoteTab from './QuoteTab'
+import SnagChecklist from './SnagChecklist'
 
 interface JobDetailPanelProps {
   job: Job
@@ -84,7 +85,6 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     signed_off_install_date: job.signed_off_install_date ?? '',
     worktop_template_date: job.worktop_template_date ?? '',
     worktop_install_date: job.worktop_install_date ?? '',
-    snag_list: job.snag_list ?? '',
     project_signed_off: job.project_signed_off,
     client_sign_off_date: job.client_sign_off_date ?? '',
     signed_off_at: job.signed_off_at ?? '',
@@ -97,6 +97,8 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
   const [saved, setSaved] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmRevertOrder, setConfirmRevertOrder] = useState(false)
+  const [revertingOrder, setRevertingOrder] = useState(false)
 
   const set = (field: keyof FormState, value: string | number | boolean | null) =>
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -123,6 +125,18 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
       setConfirmDelete(false)
     } else {
       onDeleted()
+    }
+  }
+
+  const handleRevertOrder = async () => {
+    setRevertingOrder(true)
+    const result = await revertJobToOrderProcessing(job.id)
+    if (result.error) {
+      setError(result.error)
+      setRevertingOrder(false)
+      setConfirmRevertOrder(false)
+    } else {
+      onJobUpdated()
     }
   }
 
@@ -332,7 +346,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
               </Field>
               <CheckboxField label="Site dimensions captured" checked={(form.pm_site_dimensions_captured as boolean) ?? false} onChange={(v) => set('pm_site_dimensions_captured', v)} />
               <Field label="Snag list">
-                <textarea className={INPUT} style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={4} value={(form.snag_list as string) ?? ''} onChange={(e) => set('snag_list', e.target.value)} placeholder="List any snags or outstanding items..." />
+                <SnagChecklist jobId={job.id} legacyNote={job.snag_list} />
               </Field>
               <CheckboxField label="Project signed off by customer" checked={(form.project_signed_off as boolean) ?? false} onChange={(v) => set('project_signed_off', v)} />
               <Field label="Client sign-off date">
@@ -373,12 +387,25 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
               </button>
             </>
+          ) : confirmRevertOrder ? (
+            <>
+              <p className="text-xs flex-1 font-medium" style={{ color: '#6B7280' }}>Move back to Order Processing?</p>
+              <button onClick={() => setConfirmRevertOrder(false)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleRevertOrder} disabled={revertingOrder} className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#F59E0B' }}>
+                {revertingOrder ? 'Moving...' : 'Yes, Move Back'}
+              </button>
+            </>
           ) : (
             <>
               <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
                 <Trash2Icon size={14} />
                 Delete
               </button>
+              {job.stage === 'project_management' && (
+                <button onClick={() => setConfirmRevertOrder(true)} className="px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                  ← Back to Order Processing
+                </button>
+              )}
               {error && <p className="text-xs flex-1" style={{ color: '#DC2626' }}>{error}</p>}
               {saved && <p className="text-xs flex-1" style={{ color: '#059669' }}>Saved!</p>}
               {!error && !saved && <div className="flex-1" />}

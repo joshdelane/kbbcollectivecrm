@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { PlusIcon, Trash2Icon, SaveIcon, Maximize2Icon, PrinterIcon, XIcon, CopyPlusIcon, TagIcon } from 'lucide-react'
-import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision, getOrgLogo, saveOrgLogo } from '@/lib/actions'
+import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision, getOrgLogo, saveOrgLogo, getOrgTermsAndConditions } from '@/lib/actions'
 import { QUOTE_CATEGORIES } from '@/types'
 import type { Job, QuoteCategory } from '@/types'
 
@@ -46,11 +46,13 @@ function ProofOfPurchase({
   lines,
   onClose,
   logoUrl,
+  termsAndConditions,
 }: {
   job: Job
   lines: LineItem[]
   onClose: () => void
   logoUrl: string | null
+  termsAndConditions: string | null
 }) {
   const appliances = lines.filter((l) => l.category === 'Appliances' && l.description.trim())
 
@@ -148,6 +150,12 @@ function ProofOfPurchase({
               </table>
             )}
           </div>
+          {termsAndConditions && (
+            <div className="px-10 pb-10 pt-4" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#9CA3AF' }}>Terms &amp; Conditions</p>
+              <p className="text-xs whitespace-pre-wrap" style={{ color: '#6B7280', lineHeight: 1.6 }}>{termsAndConditions}</p>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -164,6 +172,7 @@ function FullScreenQuote({
   onToggleOrdered,
   logoUrl,
   onLogoSaved,
+  termsAndConditions,
 }: {
   job: Job
   lines: LineItem[]
@@ -172,6 +181,7 @@ function FullScreenQuote({
   onToggleOrdered: (i: number) => void
   logoUrl: string | null
   onLogoSaved: (url: string | null) => void
+  termsAndConditions: string | null
 }) {
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -359,6 +369,12 @@ function FullScreenQuote({
               </div>
             )}
           </div>
+          {termsAndConditions && (
+            <div className="px-10 pb-10 pt-4" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#9CA3AF' }}>Terms &amp; Conditions</p>
+              <p className="text-xs whitespace-pre-wrap" style={{ color: '#6B7280', lineHeight: 1.6 }}>{termsAndConditions}</p>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -380,7 +396,9 @@ export default function QuoteTab({ job }: { job: Job }) {
   const [fullScreen, setFullScreen] = useState(false)
   const [showPoP, setShowPoP] = useState(false)
   const [globalDiscount, setGlobalDiscount] = useState('')
+  const [globalMargin, setGlobalMargin] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [termsAndConditions, setTermsAndConditions] = useState<string | null>(null)
 
   const loadRevision = async (revNum: number) => {
     setLoading(true)
@@ -398,12 +416,14 @@ export default function QuoteTab({ job }: { job: Job }) {
 
   useEffect(() => {
     const init = async () => {
-      const [revNums, { lines: fetched, revision }, logo] = await Promise.all([
+      const [revNums, { lines: fetched, revision }, logo, terms] = await Promise.all([
         getQuoteRevisionNumbers(job.id),
         getQuoteLines(job.id),
         getOrgLogo(),
+        getOrgTermsAndConditions(),
       ])
       setLogoUrl(logo)
+      setTermsAndConditions(terms)
       const latest = Math.max(...revNums, revision ?? 1)
       setRevisions(revNums.length > 0 ? revNums : [1])
       setLatestRevision(latest)
@@ -454,6 +474,23 @@ export default function QuoteTab({ job }: { job: Job }) {
     const pct = parseFloat(globalDiscount)
     if (isNaN(pct) || pct < 0 || pct > 100) return
     setLines((prev) => prev.map((l) => ({ ...l, discount_percent: pct === 0 ? '' : pct.toString() })))
+  }
+
+  // Backs into a retail price for each line from its cost price so the line
+  // lands on the target margin %, accounting for any discount already set
+  // (margin is measured against net price, same as the Margin % totals below).
+  // Lines without a cost price are left untouched — there's nothing to back into.
+  const applyGlobalMargin = () => {
+    const pct = parseFloat(globalMargin)
+    if (isNaN(pct) || pct < 0 || pct >= 100) return
+    setLines((prev) => prev.map((l) => {
+      const cost = parseNum(l.cost_price)
+      if (cost <= 0) return l
+      const disc = parseNum(l.discount_percent)
+      const targetNet = cost / (1 - pct / 100)
+      const targetRetail = disc < 100 ? targetNet / (1 - disc / 100) : targetNet
+      return { ...l, retail_price: targetRetail.toFixed(2) }
+    }))
   }
 
   const handleSave = async () => {
@@ -518,10 +555,11 @@ export default function QuoteTab({ job }: { job: Job }) {
           onToggleOrdered={(i) => update(i, 'is_ordered', !lines[i].is_ordered)}
           logoUrl={logoUrl}
           onLogoSaved={setLogoUrl}
+          termsAndConditions={termsAndConditions}
         />
       )}
       {showPoP && (
-        <ProofOfPurchase job={job} lines={lines} onClose={() => setShowPoP(false)} logoUrl={logoUrl} />
+        <ProofOfPurchase job={job} lines={lines} onClose={() => setShowPoP(false)} logoUrl={logoUrl} termsAndConditions={termsAndConditions} />
       )}
 
       <div className="flex flex-col flex-1 min-h-0">
@@ -614,6 +652,36 @@ export default function QuoteTab({ job }: { job: Job }) {
                     Apply to all
                   </button>
                   <span className="text-xs ml-1" style={{ color: '#92400E' }}>or set per line below</span>
+                </div>
+              )}
+
+              {/* Global margin bar */}
+              {isLatest && (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                  <TagIcon size={13} style={{ color: '#1D4ED8', flexShrink: 0 }} />
+                  <span className="text-xs font-semibold" style={{ color: '#1D4ED8' }}>Global margin</span>
+                  <div className="relative ml-1" style={{ width: '80px' }}>
+                    <input
+                      type="number"
+                      className={INPUT}
+                      style={{ ...INPUT_STYLE, paddingRight: '20px', backgroundColor: '#FFFFFF', fontSize: '12px' }}
+                      placeholder="0"
+                      value={globalMargin}
+                      onChange={(e) => setGlobalMargin(e.target.value)}
+                      min="0"
+                      max="99"
+                      step="0.5"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs" style={{ color: '#9CA3AF' }}>%</span>
+                  </div>
+                  <button
+                    onClick={applyGlobalMargin}
+                    className="px-2.5 py-1 rounded text-xs font-semibold hover:opacity-80"
+                    style={{ backgroundColor: '#1D4ED8', color: '#FFFFFF' }}
+                  >
+                    Apply to all
+                  </button>
+                  <span className="text-xs ml-1" style={{ color: '#1D4ED8' }}>backs into retail price from cost — lines need a cost first</span>
                 </div>
               )}
 

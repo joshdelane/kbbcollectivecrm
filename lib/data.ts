@@ -76,6 +76,50 @@ export async function getStageCounts(): Promise<Record<BoardKey, number>> {
   return counts as Record<BoardKey, number>
 }
 
+// Counts outstanding to-do items — unordered quote lines and open snag
+// checklist items — for jobs in project_management with an install date in
+// the next 12 weeks. Mirrors the query in app/todo/page.tsx so the sidebar
+// badge always matches what the To-Do page actually lists.
+export async function getTodoCount(): Promise<number> {
+  const supabase = await createClient()
+
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() + 84)
+  const cutoffISO = cutoff.toISOString().slice(0, 10)
+  const todayISO = new Date().toISOString().slice(0, 10)
+
+  const { data: jobs } = await supabase
+    .from('jobs')
+    .select('id, quote_revision')
+    .eq('stage', 'project_management')
+    .not('signed_off_install_date', 'is', null)
+    .gte('signed_off_install_date', todayISO)
+    .lte('signed_off_install_date', cutoffISO)
+
+  if (!jobs || jobs.length === 0) return 0
+  const jobIds = jobs.map((j) => j.id)
+  const revMap = new Map(jobs.map((j) => [j.id, j.quote_revision ?? 1]))
+
+  const [{ data: lines }, { count: snagCount }] = await Promise.all([
+    supabase
+      .from('quote_lines')
+      .select('job_id, description, revision_number')
+      .in('job_id', jobIds)
+      .eq('is_ordered', false),
+    supabase
+      .from('snag_items')
+      .select('id', { count: 'exact', head: true })
+      .in('job_id', jobIds)
+      .eq('is_done', false),
+  ])
+
+  const outstandingLines = (lines ?? []).filter(
+    (l) => l.revision_number === revMap.get(l.job_id) && l.description.trim()
+  ).length
+
+  return outstandingLines + (snagCount ?? 0)
+}
+
 // Returns close rate (0–1) per enquiry source, based on historical sold vs dead jobs.
 // A job "resolves" when it gets sold (sold_at) or dies (dead_at).
 export async function getSourceCloseRates(): Promise<Record<string, number>> {

@@ -1,5 +1,9 @@
 'use client'
 
+import { useState } from 'react'
+import { toggleSnagItem } from '@/lib/actions'
+import type { SnagItem } from '@/types'
+
 interface TodoLine {
   id: string
   job_id: string
@@ -22,6 +26,11 @@ interface JobWithLines {
   lines: TodoLine[]
 }
 
+interface JobWithSnags {
+  job: TodoJob
+  snags: SnagItem[]
+}
+
 function fmtDate(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
@@ -41,24 +50,49 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Installation': '#10B981',
 }
 
-export default function TodoView({ jobsWithLines }: { jobsWithLines: JobWithLines[] }) {
+export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLines: JobWithLines[]; jobsWithSnags: JobWithSnags[] }) {
+  const [snagsByJob, setSnagsByJob] = useState<Record<string, SnagItem[]>>(
+    () => Object.fromEntries(jobsWithSnags.map(({ job, snags }) => [job.id, snags]))
+  )
+
+  const handleToggleSnag = async (jobId: string, item: SnagItem) => {
+    setSnagsByJob((prev) => ({
+      ...prev,
+      [jobId]: prev[jobId].filter((s) => s.id !== item.id), // ticking off removes it from the outstanding list
+    }))
+    await toggleSnagItem(item.id, true)
+  }
+
+  // Union of jobs that have either outstanding quote lines or outstanding snags
+  const jobMap = new Map<string, TodoJob>()
+  jobsWithLines.forEach(({ job }) => jobMap.set(job.id, job))
+  jobsWithSnags.forEach(({ job }) => jobMap.set(job.id, job))
+  const linesByJob = Object.fromEntries(jobsWithLines.map(({ job, lines }) => [job.id, lines]))
+
+  const jobs = [...jobMap.values()].sort(
+    (a, b) => new Date(a.signed_off_install_date).getTime() - new Date(b.signed_off_install_date).getTime()
+  )
+
   return (
     <div className="px-8 py-8 max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">To-Do</h1>
         <p className="text-sm mt-1" style={{ color: '#6B7280' }}>
-          Unordered items from jobs fitting within the next 12 weeks
+          Unordered items and open snags from jobs fitting within the next 12 weeks
         </p>
       </div>
 
-      {jobsWithLines.length === 0 ? (
+      {jobs.length === 0 ? (
         <div className="rounded-xl flex flex-col items-center justify-center py-20" style={{ border: '1px solid #252B28' }}>
           <p className="text-sm font-medium text-white">All clear</p>
-          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items for upcoming installs.</p>
+          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items or open snags for upcoming installs.</p>
         </div>
       ) : (
         <div className="space-y-6">
-          {jobsWithLines.map(({ job, lines }) => {
+          {jobs.map((job) => {
+            const lines = linesByJob[job.id] ?? []
+            const snags = snagsByJob[job.id] ?? []
+            if (lines.length === 0 && snags.length === 0) return null
             const days = daysUntil(job.signed_off_install_date)
             const urgentColor = days <= 14 ? '#EF4444' : days <= 28 ? '#F59E0B' : '#10B981'
 
@@ -92,8 +126,29 @@ export default function TodoView({ jobsWithLines }: { jobsWithLines: JobWithLine
                   </div>
                 </div>
 
-                {/* Lines grouped by category */}
                 <div className="divide-y" style={{ borderColor: '#252B28' }}>
+                  {/* Snag checklist */}
+                  {snags.length > 0 && (
+                    <div className="px-5 py-3">
+                      <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#EF4444' }}>Snags</p>
+                      <div className="space-y-1.5">
+                        {snags.map((snag) => (
+                          <label key={snag.id} className="flex items-center gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={false}
+                              onChange={() => handleToggleSnag(job.id, snag)}
+                              className="w-4 h-4 rounded flex-none"
+                              style={{ accentColor: '#B89763' }}
+                            />
+                            <span className="text-sm" style={{ color: '#D1D5DB' }}>{snag.description}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Lines grouped by category */}
                   {Object.entries(catMap).map(([cat, catLines]) => (
                     <div key={cat} className="px-5 py-3">
                       <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: CATEGORY_COLORS[cat] ?? '#9CA3AF' }}>{cat}</p>

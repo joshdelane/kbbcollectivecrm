@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts } from '@/lib/data'
+import { getStageCounts, getTodoCount } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import { UsersIcon } from 'lucide-react'
-import type { Profile, Job } from '@/types'
+import type { Profile, Job, EnquirySource } from '@/types'
 import ZapierPanel from '@/components/integrations/ZapierPanel'
+import EnquirySourcesPanel from '@/components/team/EnquirySourcesPanel'
+import TermsAndConditionsPanel from '@/components/team/TermsAndConditionsPanel'
 
 export default async function TeamPage() {
   const supabase = await createClient()
@@ -12,11 +14,13 @@ export default async function TeamPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: profiles }, { data: jobs }, { data: org }, stageCounts] = await Promise.all([
+  const [{ data: profiles }, { data: jobs }, { data: org }, { data: enquirySources }, stageCounts, todoCount] = await Promise.all([
     supabase.from('profiles').select('*').order('full_name'),
     supabase.from('jobs').select('assigned_to, designer_assigned, installer_assigned, stage'),
-    supabase.from('organisations').select('name, invite_code, webhook_secret').single(),
+    supabase.from('organisations').select('name, invite_code, webhook_secret, terms_and_conditions').single(),
+    supabase.from('enquiry_sources').select('*').order('sort_order'),
     getStageCounts(),
+    getTodoCount(),
   ])
 
   const allProfiles = (profiles as Profile[]) ?? []
@@ -38,7 +42,7 @@ export default async function TeamPage() {
 
   return (
     <div className="flex h-screen" style={{ backgroundColor: '#1D211F' }}>
-      <Sidebar stageCounts={stageCounts} />
+      <Sidebar stageCounts={stageCounts} todoCount={todoCount} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
@@ -81,6 +85,11 @@ export default async function TeamPage() {
               />
             </div>
           )}
+
+          <div className="max-w-3xl mb-8 space-y-6">
+            <EnquirySourcesPanel initialSources={(enquirySources as EnquirySource[]) ?? []} />
+            <TermsAndConditionsPanel initialText={org?.terms_and_conditions ?? ''} />
+          </div>
 
           <div className="space-y-3 max-w-3xl">
             {allProfiles.length === 0 ? (

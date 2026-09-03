@@ -105,6 +105,15 @@ export interface StageCount {
   count: number
 }
 
+export interface SnagItem {
+  id: string
+  job_id: string
+  sort_order: number
+  description: string
+  is_done: boolean
+  created_at: string
+}
+
 export const MARKETING_CHANNELS: { key: string; label: string }[] = [
   { key: 'google_ads', label: 'Google Ads' },
   { key: 'seo', label: 'SEO' },
