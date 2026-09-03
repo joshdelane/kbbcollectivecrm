@@ -15,6 +15,7 @@ import {
   CalendarDaysIcon,
   ClipboardListIcon,
   TrendingUpIcon,
+  TrophyIcon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import GlobalSearch from './GlobalSearch'
@@ -72,6 +73,14 @@ export default function Sidebar({ stageCounts, todoCount = 0 }: SidebarProps) {
           label="Dashboard"
           icon={LayoutDashboardIcon}
           active={isActive('/dashboard')}
+        />
+
+        {/* Leaderboard */}
+        <NavItem
+          href="/leaderboard"
+          label="Leaderboard"
+          icon={TrophyIcon}
+          active={isActive('/leaderboard')}
         />
 
         {/* Divider */}

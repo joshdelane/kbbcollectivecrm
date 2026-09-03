@@ -114,6 +114,19 @@ export interface SnagItem {
   created_at: string
 }
 
+export interface DesignerStats {
+  profileId: string
+  fullName: string
+  totalSales: number
+  dealsWon: number
+  aov: number | null
+  grossMarginTotal: number | null
+  grossMarginPct: number | null
+  wonCount: number
+  lostCount: number
+  conversionRate: number | null
+}
+
 export const MARKETING_CHANNELS: { key: string; label: string }[] = [
   { key: 'google_ads', label: 'Google Ads' },
   { key: 'seo', label: 'SEO' },

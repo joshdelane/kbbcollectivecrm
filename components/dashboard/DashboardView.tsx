@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import DateRangePicker from '@/components/shared/DateRangePicker'
 import type { BoardKey } from '@/types'
 
 interface DashboardViewProps {
@@ -27,14 +26,6 @@ interface DashboardViewProps {
   totalJobs: number
   hasMarketingSpend: boolean
 }
-
-const RANGES = [
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-  { key: 'quarter', label: 'This quarter' },
-  { key: 'year', label: 'This year' },
-  { key: 'all', label: 'All time' },
-]
 
 function StatCard({
   label,
@@ -96,24 +87,6 @@ export default function DashboardView({
   totalJobs,
   hasMarketingSpend,
 }: DashboardViewProps) {
-  const router = useRouter()
-  const [showCustom, setShowCustom] = useState(false)
-  const [fromDate, setFromDate] = useState(currentFrom ?? '')
-  const [toDate, setToDate] = useState(currentTo ?? '')
-
-  const handleRangeChange = (range: string) => {
-    setShowCustom(false)
-    router.push(`/dashboard?range=${range}`)
-  }
-
-  const handleCustomApply = () => {
-    if (!fromDate || !toDate) return
-    router.push(`/dashboard?from=${fromDate}&to=${toDate}`)
-    setShowCustom(false)
-  }
-
-  const isCustomActive = !!currentFrom && !!currentTo
-
   const pipelineTotal =
     (stageCounts.enquiries ?? 0) +
     (stageCounts.qualified_leads ?? 0) +
@@ -131,70 +104,7 @@ export default function DashboardView({
           </p>
         </div>
 
-        {/* Date range selector */}
-        <div className="flex flex-col items-end gap-2">
-          <div
-            className="flex gap-1 p-1 rounded-xl"
-            style={{ backgroundColor: '#252B28' }}
-          >
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => handleRangeChange(r.key)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                style={
-                  !isCustomActive && currentRange === r.key
-                    ? { backgroundColor: '#B89763', color: '#FFFFFF' }
-                    : { color: '#6B7280' }
-                }
-              >
-                {r.label}
-              </button>
-            ))}
-            <button
-              onClick={() => setShowCustom((v) => !v)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-              style={
-                isCustomActive || showCustom
-                  ? { backgroundColor: '#B89763', color: '#FFFFFF' }
-                  : { color: '#6B7280' }
-              }
-            >
-              Custom
-            </button>
-          </div>
-
-          {showCustom && (
-            <div
-              className="flex items-center gap-2 p-3 rounded-xl"
-              style={{ backgroundColor: '#252B28' }}
-            >
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs text-white outline-none"
-                style={{ backgroundColor: '#1D211F', border: '1px solid #3A403D' }}
-              />
-              <span className="text-xs" style={{ color: '#6B7280' }}>to</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs text-white outline-none"
-                style={{ backgroundColor: '#1D211F', border: '1px solid #3A403D' }}
-              />
-              <button
-                onClick={handleCustomApply}
-                disabled={!fromDate || !toDate}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                style={{ backgroundColor: '#B89763' }}
-              >
-                Apply
-              </button>
-            </div>
-          )}
-        </div>
+        <DateRangePicker basePath="/dashboard" currentRange={currentRange} currentFrom={currentFrom} currentTo={currentTo} />
       </div>
 
       {/* Top stats row */}
