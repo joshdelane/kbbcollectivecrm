@@ -498,14 +498,17 @@ const EXPORT_COLUMNS = [
   'Signed Off Install Date', 'Client Sign-off Date', 'Dead Date', 'Notes', 'Quote Summary',
 ]
 
-// Searches customer name, address, postcode and job ID across every stage —
-// an empty query exports every job. Used both for the client-facing exports
-// (e.g. "send me all Hogwood House jobs") and as a general reporting export.
-export async function exportJobsCsv(query: string): Promise<
+// Exports jobs to CSV. Pass `board` to export an entire board/stage as-is
+// (e.g. "everything currently in Order Processing"); pass `query` to search
+// customer name, address, postcode and job ID across every stage instead
+// (e.g. "send me all Hogwood House jobs" — a client-specific export spanning
+// every stage). Neither set exports every job. `board` takes priority if both
+// are given.
+export async function exportJobsCsv(opts: { query?: string; board?: BoardKey }): Promise<
   { success: true; csv: string; count: number } | { error: string }
 > {
   const supabase = await createClient()
-  const q = query.trim().replace(/[,()%]/g, ' ').trim()
+  const q = (opts.query ?? '').trim().replace(/[,()%]/g, ' ').trim()
 
   let jobsQuery = supabase
     .from('jobs')
@@ -513,7 +516,13 @@ export async function exportJobsCsv(query: string): Promise<
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
-  if (q) {
+  if (opts.board === 'dead_leads') {
+    jobsQuery = jobsQuery.eq('stage', 'archived').is('signed_off_at', null)
+  } else if (opts.board === 'finished') {
+    jobsQuery = jobsQuery.eq('stage', 'archived').not('signed_off_at', 'is', null)
+  } else if (opts.board) {
+    jobsQuery = jobsQuery.eq('stage', opts.board)
+  } else if (q) {
     jobsQuery = jobsQuery.or(
       `customer_name.ilike.%${q}%,address_line_1.ilike.%${q}%,postcode.ilike.%${q}%,job_id.ilike.%${q}%`
     )

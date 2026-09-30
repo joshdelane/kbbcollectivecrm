@@ -3,18 +3,7 @@
 import { useState } from 'react'
 import { DownloadIcon, SearchIcon } from 'lucide-react'
 import { exportJobsCsv } from '@/lib/actions'
-
-function downloadCsv(csv: string, filename: string) {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
+import { downloadCsv } from '@/lib/downloadCsv'
 
 function slugify(s: string): string {
   const trimmed = s.trim()
@@ -32,7 +21,7 @@ export default function ExportView() {
     setLoading(true)
     setError('')
     setLastCount(null)
-    const result = await exportJobsCsv(query)
+    const result = await exportJobsCsv({ query })
     if ('error' in result) {
       setError(result.error)
     } else if (result.count === 0) {

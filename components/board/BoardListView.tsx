@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon, ArchiveIcon, ChevronUpIcon, ChevronDownIcon } from 'lucide-react'
-import { advanceJobStage, markJobDead, reviveJob, archiveQualifiedLead } from '@/lib/actions'
+import { PlusIcon, ChevronRightIcon, XCircleIcon, RotateCcwIcon, ArchiveIcon, ChevronUpIcon, ChevronDownIcon, DownloadIcon } from 'lucide-react'
+import { advanceJobStage, markJobDead, reviveJob, archiveQualifiedLead, exportJobsCsv } from '@/lib/actions'
+import { downloadCsv } from '@/lib/downloadCsv'
 import { STAGE_ACTIONS } from '@/types'
 import type { Job, Profile, EnquirySource, BoardKey } from '@/types'
 import JobDetailPanel from '@/components/jobs/JobDetailPanel'
@@ -185,6 +186,7 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
   const [advancing, setAdvancing] = useState<string | null>(null)
   const [sort, setSort] = useState<SortState | null>(null)
   const [filterMinValue, setFilterMinValue] = useState('')
+  const [exporting, setExporting] = useState(false)
   const router = useRouter()
   const color = STAGE_COLORS[board]
   const isArchivedBoard = board === 'dead_leads' || board === 'finished'
@@ -248,6 +250,16 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
     setAdvancing(null)
   }
 
+  const handleExport = async () => {
+    setExporting(true)
+    const result = await exportJobsCsv({ board })
+    if ('success' in result && result.count > 0) {
+      const today = new Date().toISOString().slice(0, 10)
+      downloadCsv(result.csv, `${board}-${today}.csv`)
+    }
+    setExporting(false)
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Page header */}
@@ -299,11 +311,24 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
             Clear
           </button>
         )}
-        {displayJobs.length !== initialJobs.length && (
-          <span className="text-xs ml-auto" style={{ color: '#6B7280' }}>
-            Showing {displayJobs.length} of {initialJobs.length}
-          </span>
-        )}
+        <span className="flex items-center gap-3 ml-auto">
+          {displayJobs.length !== initialJobs.length && (
+            <span className="text-xs" style={{ color: '#6B7280' }}>
+              Showing {displayJobs.length} of {initialJobs.length}
+            </span>
+          )}
+          {initialJobs.length > 0 && (
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: '#1E252222', color: '#B89763', border: '1px solid #3A2F22' }}
+            >
+              <DownloadIcon size={12} />
+              {exporting ? 'Exporting...' : 'Export CSV'}
+            </button>
+          )}
+        </span>
       </div>
 
       {/* Table */}
