@@ -339,6 +339,7 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
                 {board === 'order_processing' && <TH sortKey="order_valuation" sort={sort} onSort={handleSort}>Valuation</TH>}
                 {board === 'order_processing' && <TH>Deposit</TH>}
                 {board === 'order_processing' && <TH sortKey="proposed_install_date" sort={sort} onSort={handleSort}>Install Date</TH>}
+                {board === 'order_processing' && <TH sortKey="order_delivery_date" sort={sort} onSort={handleSort}>Delivery Date</TH>}
                 {board === 'order_processing' && <TH>Fit Days</TH>}
                 {board === 'order_processing' && <TH>Site Dims</TH>}
                 {board === 'order_processing' && <TH>Designer</TH>}
@@ -384,6 +385,7 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
                   {board === 'order_processing' && <TD><span className="font-semibold text-white">{fmt(job.order_valuation)}</span></TD>}
                   {board === 'order_processing' && <TD>{fmt(job.deposit_amount)}</TD>}
                   {board === 'order_processing' && <TD>{fmtDate(job.proposed_install_date)}</TD>}
+                  {board === 'order_processing' && <TD>{fmtDate(job.order_delivery_date)}</TD>}
                   {board === 'order_processing' && <TD>{job.fitting_days ? <span className="text-white font-medium">{job.fitting_days}d</span> : <span style={{ color: '#4A5250' }}>—</span>}</TD>}
                   {board === 'order_processing' && <TD><CheckCell checked={job.site_dimensions_captured} /></TD>}
                   {board === 'order_processing' && <TD><ProfileCell profileId={job.designer_assigned} profiles={profiles} /></TD>}

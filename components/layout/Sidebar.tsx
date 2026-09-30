@@ -16,6 +16,7 @@ import {
   ClipboardListIcon,
   TrendingUpIcon,
   TrophyIcon,
+  DownloadIcon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import GlobalSearch from './GlobalSearch'
@@ -139,6 +140,14 @@ export default function Sidebar({ stageCounts, todoCount = 0 }: SidebarProps) {
           label="Team"
           icon={UsersIcon}
           active={isActive('/team')}
+        />
+
+        {/* Export */}
+        <NavItem
+          href="/export"
+          label="Export"
+          icon={DownloadIcon}
+          active={isActive('/export')}
         />
       </nav>
 

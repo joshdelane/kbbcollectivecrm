@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { Job, Stage, BoardKey, SnagItem } from '@/types'
+import type { Job, Stage, BoardKey, SnagItem, ExtraCost } from '@/types'
 
 // ── Helper: get current user's organisation_id ────────────────
 async function getOrgId(): Promise<string | null> {
@@ -470,6 +470,118 @@ export async function searchJobs(query: string): Promise<
   }))
 }
 
+// ── CSV Export ───────────────────────────────────────────────────
+
+const EXPORT_STAGE_LABELS: Record<BoardKey, string> = {
+  enquiries: 'Enquiries',
+  qualified_leads: 'Qualified Lead',
+  order_processing: 'Order Processing',
+  project_management: 'Project Management',
+  dead_leads: 'Dead Lead',
+  finished: 'Finished',
+}
+
+function csvCell(value: string | number | null | undefined): string {
+  const s = value === null || value === undefined ? '' : String(value)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function csvDate(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : ''
+}
+
+const EXPORT_COLUMNS = [
+  'Job ID', 'Customer Name', 'Phone', 'Email', 'Address', 'Postcode',
+  'Stage', 'Source', 'Rough Budget', 'Quote Total', 'Order Valuation',
+  'Deposit Amount', 'Deposit Received', 'Enquiry Date', 'Qualified Date',
+  'Sold Date', 'Order Placed Date', 'Proposed Install Date', 'Delivery Date',
+  'Signed Off Install Date', 'Client Sign-off Date', 'Dead Date', 'Notes', 'Quote Summary',
+]
+
+// Searches customer name, address, postcode and job ID across every stage —
+// an empty query exports every job. Used both for the client-facing exports
+// (e.g. "send me all Hogwood House jobs") and as a general reporting export.
+export async function exportJobsCsv(query: string): Promise<
+  { success: true; csv: string; count: number } | { error: string }
+> {
+  const supabase = await createClient()
+  const q = query.trim().replace(/[,()%]/g, ' ').trim()
+
+  let jobsQuery = supabase
+    .from('jobs')
+    .select('*')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+
+  if (q) {
+    jobsQuery = jobsQuery.or(
+      `customer_name.ilike.%${q}%,address_line_1.ilike.%${q}%,postcode.ilike.%${q}%,job_id.ilike.%${q}%`
+    )
+  }
+
+  const { data: jobs, error } = await jobsQuery
+  if (error) return { error: error.message }
+  if (!jobs || jobs.length === 0) return { success: true, csv: '', count: 0 }
+
+  const jobIds = jobs.map((j) => j.id)
+  const revisionMap = new Map(jobs.map((j) => [j.id, j.quote_revision ?? 1]))
+
+  const { data: lines } = await supabase
+    .from('quote_lines')
+    .select('job_id, category, description, retail_price, discount_percent, revision_number')
+    .in('job_id', jobIds)
+    .order('sort_order', { ascending: true })
+
+  const quoteSummaryByJob = new Map<string, string>()
+  for (const line of lines ?? []) {
+    if (line.revision_number !== revisionMap.get(line.job_id)) continue
+    if (!line.description?.trim()) continue
+    const retail = Number(line.retail_price ?? 0)
+    const disc = Number(line.discount_percent ?? 0)
+    const net = retail * (1 - disc / 100)
+    const part = `${line.category ? line.category + ': ' : ''}${line.description}${net > 0 ? ` (£${net.toFixed(2)})` : ''}`
+    quoteSummaryByJob.set(line.job_id, [...(quoteSummaryByJob.get(line.job_id)?.split(' | ') ?? []).filter(Boolean), part].join(' | '))
+  }
+
+  const rows = jobs.map((job) => {
+    const stageKey: BoardKey = job.stage === 'archived'
+      ? (job.signed_off_at ? 'finished' : 'dead_leads')
+      : (job.stage as BoardKey)
+    return [
+      job.job_id,
+      job.customer_name,
+      job.phone ?? '',
+      job.email ?? '',
+      job.address_line_1 ?? '',
+      job.postcode ?? '',
+      EXPORT_STAGE_LABELS[stageKey],
+      job.enquiry_source ?? '',
+      job.rough_budget ?? '',
+      job.quote_total ?? '',
+      job.order_valuation ?? '',
+      job.deposit_amount ?? '',
+      csvDate(job.deposit_received_at),
+      csvDate(job.created_at),
+      csvDate(job.qualified_at),
+      csvDate(job.sold_at),
+      csvDate(job.order_placed_at),
+      csvDate(job.proposed_install_date),
+      csvDate(job.order_delivery_date),
+      csvDate(job.signed_off_install_date),
+      csvDate(job.client_sign_off_date),
+      csvDate(job.dead_at),
+      job.notes ?? '',
+      quoteSummaryByJob.get(job.id) ?? '',
+    ]
+  })
+
+  const csv = '﻿' + [EXPORT_COLUMNS, ...rows]
+    .map((row) => row.map(csvCell).join(','))
+    .join('\r\n')
+
+  return { success: true, csv, count: jobs.length }
+}
+
 export async function getOrgLogo(): Promise<string | null> {
   const supabase = await createClient()
   const orgId = await getOrgId()
@@ -505,7 +617,7 @@ export async function createEnquirySource(name: string) {
     .select()
     .single()
 
-  if (error) return { error: error.message }
+  if (error) return { error: error.message.includes('duplicate key') ? 'A source with that name already exists' : error.message }
 
   return { success: true, source: data }
 }
@@ -517,7 +629,7 @@ export async function updateEnquirySource(id: string, name: string) {
     .from('enquiry_sources')
     .update({ name: name.trim() })
     .eq('id', id)
-  if (error) return { error: error.message }
+  if (error) return { error: error.message.includes('duplicate key') ? 'A source with that name already exists' : error.message }
   revalidatePath('/', 'layout')
   return { success: true }
 }
@@ -598,6 +710,44 @@ export async function deleteSnagItem(id: string) {
   const supabase = await createClient()
   const { error } = await supabase
     .from('snag_items')
+    .delete()
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Extra costs (unforeseen, hidden from clients, eat into margin) ───────
+
+export async function getExtraCosts(jobId: string): Promise<ExtraCost[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('extra_costs')
+    .select('*')
+    .eq('job_id', jobId)
+    .order('created_at', { ascending: true })
+  return (data as ExtraCost[]) ?? []
+}
+
+export async function addExtraCost(jobId: string, description: string, amount: number) {
+  if (!description.trim()) return { error: 'Description cannot be empty' }
+  if (isNaN(amount) || amount <= 0) return { error: 'Enter an amount greater than 0' }
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('extra_costs')
+    .insert([{ job_id: jobId, description: description.trim(), amount }])
+    .select()
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true, item: data as ExtraCost }
+}
+
+export async function deleteExtraCost(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('extra_costs')
     .delete()
     .eq('id', id)
   if (error) return { error: error.message }

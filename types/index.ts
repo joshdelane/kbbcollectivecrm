@@ -48,6 +48,7 @@ export interface Job {
   // Order processing
   order_valuation: number | null
   proposed_install_date: string | null
+  order_delivery_date: string | null
   deposit_amount: number | null
   deposit_received_at: string | null
   fitting_days: number | null
@@ -111,6 +112,14 @@ export interface SnagItem {
   sort_order: number
   description: string
   is_done: boolean
+  created_at: string
+}
+
+export interface ExtraCost {
+  id: string
+  job_id: string
+  description: string
+  amount: number
   created_at: string
 }
 

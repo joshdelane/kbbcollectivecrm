@@ -32,10 +32,16 @@ export async function getGrossMarginData(): Promise<{ grossMarginPct: number | n
   const jobIds = pmJobs.map((j) => j.id)
   const revisionMap = new Map(pmJobs.map((j) => [j.id, j.quote_revision ?? 1]))
 
-  const { data: lines } = await supabase
-    .from('quote_lines')
-    .select('job_id, retail_price, cost_price, discount_percent, revision_number')
-    .in('job_id', jobIds)
+  const [{ data: lines }, { data: extraCosts }] = await Promise.all([
+    supabase
+      .from('quote_lines')
+      .select('job_id, retail_price, cost_price, discount_percent, revision_number')
+      .in('job_id', jobIds),
+    supabase
+      .from('extra_costs')
+      .select('job_id, amount')
+      .in('job_id', jobIds),
+  ])
 
   if (!lines) return { grossMarginPct: null, jobCount: 0 }
 
@@ -49,6 +55,12 @@ export async function getGrossMarginData(): Promise<{ grossMarginPct: number | n
     const disc = Number(line.discount_percent ?? 0)
     entry.revenue += retail * (1 - disc / 100)
     entry.cost += Number(line.cost_price ?? 0)
+  }
+
+  // Unforeseen costs discovered after quoting eat into the same margin
+  for (const row of extraCosts ?? []) {
+    const entry = jobTotals.get(row.job_id)
+    if (entry) entry.cost += Number(row.amount ?? 0)
   }
 
   const margins: number[] = []
@@ -187,12 +199,20 @@ export async function getDesignerLeaderboard(start: Date, end: Date): Promise<De
   const revisionMap = new Map((soldJobs ?? []).map((j) => [j.id, j.quote_revision ?? 1]))
 
   let lines: { job_id: string; retail_price: number | null; cost_price: number | null; discount_percent: number; revision_number: number }[] = []
+  let extraCosts: { job_id: string; amount: number }[] = []
   if (soldJobIds.length > 0) {
-    const { data } = await supabase
-      .from('quote_lines')
-      .select('job_id, retail_price, cost_price, discount_percent, revision_number')
-      .in('job_id', soldJobIds)
-    lines = data ?? []
+    const [{ data: lineData }, { data: extraCostData }] = await Promise.all([
+      supabase
+        .from('quote_lines')
+        .select('job_id, retail_price, cost_price, discount_percent, revision_number')
+        .in('job_id', soldJobIds),
+      supabase
+        .from('extra_costs')
+        .select('job_id, amount')
+        .in('job_id', soldJobIds),
+    ])
+    lines = lineData ?? []
+    extraCosts = extraCostData ?? []
   }
 
   const jobMargin = new Map<string, { revenue: number; cost: number }>()
@@ -204,6 +224,11 @@ export async function getDesignerLeaderboard(start: Date, end: Date): Promise<De
     const disc = Number(line.discount_percent ?? 0)
     entry.revenue += retail * (1 - disc / 100)
     entry.cost += Number(line.cost_price ?? 0)
+  }
+  // Unforeseen costs discovered after quoting eat into the same margin
+  for (const row of extraCosts) {
+    const entry = jobMargin.get(row.job_id)
+    if (entry) entry.cost += Number(row.amount ?? 0)
   }
 
   interface Agg {

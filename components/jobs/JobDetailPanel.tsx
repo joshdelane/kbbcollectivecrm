@@ -7,6 +7,7 @@ import { STAGES } from '@/types'
 import type { Job, Profile, Stage, EnquirySource } from '@/types'
 import QuoteTab from './QuoteTab'
 import SnagChecklist from './SnagChecklist'
+import ExtraCostsTab from './ExtraCostsTab'
 
 interface JobDetailPanelProps {
   job: Job
@@ -77,6 +78,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     project_manager_assigned: job.project_manager_assigned ?? '',
     order_valuation: job.order_valuation ?? undefined,
     proposed_install_date: job.proposed_install_date ?? '',
+    order_delivery_date: job.order_delivery_date ?? '',
     deposit_amount: job.deposit_amount ?? undefined,
     deposit_received_at: job.deposit_received_at ?? '',
     fitting_days: job.fitting_days ?? undefined,
@@ -159,7 +161,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
   const showProjectManagement = stageIndex >= 3
   const showQuoteTab = stageIndex >= 1
 
-  const [tab, setTab] = useState<'details' | 'quote'>('details')
+  const [tab, setTab] = useState<'details' | 'quote' | 'costs'>('details')
 
   return (
     <>
@@ -187,7 +189,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
         {/* Tab bar — only for Qualified Leads and Order Processing */}
         {showQuoteTab && (
           <div className="flex-none flex" style={{ borderBottom: '1px solid #F3F4F6' }}>
-            {(['details', 'quote'] as const).map((t) => (
+            {(showOrderProcessing ? (['details', 'quote', 'costs'] as const) : (['details', 'quote'] as const)).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -198,7 +200,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                   marginBottom: '-1px',
                 }}
               >
-                {t === 'details' ? 'Details' : 'Quote'}
+                {t === 'details' ? 'Details' : t === 'quote' ? 'Quote' : 'Extra Costs'}
               </button>
             ))}
           </div>
@@ -211,8 +213,15 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
           </div>
         )}
 
+        {/* Extra costs tab */}
+        {showOrderProcessing && tab === 'costs' && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <ExtraCostsTab jobId={job.id} />
+          </div>
+        )}
+
         {/* Details form + footer */}
-        {(!showQuoteTab || tab === 'details') && <>
+        {(!showQuoteTab || tab === 'details') && tab !== 'costs' && <>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <SectionHeading title="Customer Details" />
 
@@ -316,6 +325,11 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                 <Field label="Proposed install date">
                   <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.proposed_install_date as string) ?? ''} onChange={(e) => set('proposed_install_date', e.target.value || null)} />
                 </Field>
+                <Field label="Order delivery date">
+                  <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.order_delivery_date as string) ?? ''} onChange={(e) => set('order_delivery_date', e.target.value || null)} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Fitting days">
                   <input type="number" className={INPUT} style={INPUT_STYLE} value={(form.fitting_days as number) ?? ''} onChange={(e) => set('fitting_days', e.target.value ? parseInt(e.target.value, 10) : null)} placeholder="3" min="1" />
                 </Field>
