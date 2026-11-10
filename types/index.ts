@@ -67,6 +67,10 @@ export interface Job {
   quote_total: number | null
   quote_revision: number
 
+  // Reporting
+  lost_reason: string | null
+  exclude_from_metrics: boolean
+
   // Timestamps
   created_at: string
   updated_at: string
@@ -83,6 +87,20 @@ export const QUOTE_CATEGORIES = [
   'Sinks and Taps',
   'Worktops',
   'Installation',
+  'Pass-through (at cost)',
+] as const
+
+// Lines in this category are bought and re-invoiced at cost (e.g. flooring),
+// so they're left out of every margin calculation.
+export const PASS_THROUGH_CATEGORY = 'Pass-through (at cost)'
+
+export const LOST_REASONS = [
+  'Price',
+  'Timing',
+  'Went elsewhere',
+  'We declined',
+  'No response',
+  'Other',
 ] as const
 
 export type QuoteCategory = typeof QUOTE_CATEGORIES[number]
@@ -136,20 +154,19 @@ export interface DesignerStats {
   conversionRate: number | null
 }
 
-export const MARKETING_CHANNELS: { key: string; label: string }[] = [
-  { key: 'google_ads', label: 'Google Ads' },
-  { key: 'seo', label: 'SEO' },
-  { key: 'meta_ads', label: 'Meta Ads' },
-  { key: 'agency_costs', label: 'Agency Costs' },
-  { key: 'other', label: 'Other' },
-]
-
-export type MarketingChannel = 'google_ads' | 'seo' | 'meta_ads' | 'agency_costs' | 'other'
+export interface MarketingChannel {
+  id: string
+  name: string
+  enquiry_source: string | null // linked enquiry source name, for cost per lead by source
+  sort_order: number
+  created_at: string
+}
 
 export interface MarketingSpend {
   id: string
   organisation_id: string
-  channel: MarketingChannel
+  channel: string // channel name at the time of entry (legacy rows hold the old fixed key)
+  channel_id: string | null
   amount: number
   spend_month: string // ISO date string — first day of month e.g. "2024-04-01"
   notes: string | null

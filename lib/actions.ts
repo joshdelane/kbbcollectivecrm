@@ -120,6 +120,9 @@ export async function reviveJob(jobId: string) {
     updatePayload = { stage: 'enquiries' }
   }
 
+  // A revived job is back in play, so it no longer has a lost reason
+  updatePayload.lost_reason = null
+
   const { error } = await supabase
     .from('jobs')
     .update(updatePayload)
@@ -131,11 +134,11 @@ export async function reviveJob(jobId: string) {
   return { success: true }
 }
 
-export async function markJobDead(jobId: string) {
+export async function markJobDead(jobId: string, lostReason?: string) {
   const supabase = await createClient()
   const { error } = await supabase
     .from('jobs')
-    .update({ stage: 'archived', dead_at: new Date().toISOString() })
+    .update({ stage: 'archived', dead_at: new Date().toISOString(), lost_reason: lostReason || null })
     .eq('id', jobId)
     .eq('stage', 'enquiries')
 
@@ -145,11 +148,11 @@ export async function markJobDead(jobId: string) {
   return { success: true }
 }
 
-export async function archiveQualifiedLead(jobId: string) {
+export async function archiveQualifiedLead(jobId: string, lostReason?: string) {
   const supabase = await createClient()
   const { error } = await supabase
     .from('jobs')
-    .update({ stage: 'archived' })
+    .update({ stage: 'archived', lost_reason: lostReason || null })
     .eq('id', jobId)
     .eq('stage', 'qualified_leads')
 
@@ -338,6 +341,21 @@ export async function createQuoteRevision(jobId: string) {
   return { success: true, revision: newRevision }
 }
 
+// Undo for an accidental "Qualify" — back to Enquiries, clearing qualified_at.
+export async function revertJobToEnquiries(jobId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('jobs')
+    .update({ stage: 'enquiries', qualified_at: null })
+    .eq('id', jobId)
+    .eq('stage', 'qualified_leads')
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
 export async function revertJobToQualified(jobId: string) {
   const supabase = await createClient()
   const { error } = await supabase
@@ -401,6 +419,7 @@ export async function deleteJob(jobId: string) {
 
 export async function createMarketingSpend(data: {
   channel: string
+  channel_id: string
   amount: number
   spend_month: string // 'YYYY-MM-DD' (first day of month)
   notes?: string
@@ -439,6 +458,55 @@ export async function deleteMarketingSpend(id: string) {
     .from('marketing_spend')
     .delete()
     .eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Marketing Channels ───────────────────────────────────────────
+
+export async function createMarketingChannel(name: string, enquirySource: string | null) {
+  if (!name.trim()) return { error: 'Name cannot be empty' }
+  const supabase = await createClient()
+  const orgId = await getOrgId()
+  if (!orgId) return { error: 'No organisation found' }
+
+  const { error } = await supabase
+    .from('marketing_channels')
+    .insert([{ name: name.trim(), enquiry_source: enquirySource || null, organisation_id: orgId, sort_order: 50 }])
+  if (error) return { error: error.message.includes('duplicate key') ? 'A channel with that name already exists' : error.message }
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function updateMarketingChannel(id: string, data: { name?: string; enquiry_source?: string | null }) {
+  if (data.name !== undefined && !data.name.trim()) return { error: 'Name cannot be empty' }
+  const supabase = await createClient()
+  const clean = {
+    ...(data.name !== undefined && { name: data.name.trim() }),
+    ...(data.enquiry_source !== undefined && { enquiry_source: data.enquiry_source || null }),
+  }
+  const { error } = await supabase.from('marketing_channels').update(clean).eq('id', id)
+  if (error) return { error: error.message.includes('duplicate key') ? 'A channel with that name already exists' : error.message }
+
+  // Keep the denormalised name on past spend rows in step
+  if (clean.name) await supabase.from('marketing_spend').update({ channel: clean.name }).eq('channel_id', id)
+
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function deleteMarketingChannel(id: string) {
+  const supabase = await createClient()
+  const { count } = await supabase
+    .from('marketing_spend')
+    .select('id', { count: 'exact', head: true })
+    .eq('channel_id', id)
+  if (count) return { error: 'This channel has spend recorded against it. Delete those entries first.' }
+
+  const { error } = await supabase.from('marketing_channels').delete().eq('id', id)
   if (error) return { error: error.message }
 
   revalidatePath('/', 'layout')
@@ -495,7 +563,7 @@ const EXPORT_COLUMNS = [
   'Stage', 'Source', 'Rough Budget', 'Quote Total', 'Order Valuation',
   'Deposit Amount', 'Deposit Received', 'Enquiry Date', 'Qualified Date',
   'Sold Date', 'Order Placed Date', 'Proposed Install Date', 'Delivery Date',
-  'Signed Off Install Date', 'Client Sign-off Date', 'Dead Date', 'Notes', 'Quote Summary',
+  'Signed Off Install Date', 'Client Sign-off Date', 'Dead Date', 'Lost Reason', 'Excluded From Metrics', 'Notes', 'Quote Summary',
 ]
 
 // Exports jobs to CSV. Pass `board` to export an entire board/stage as-is
@@ -579,6 +647,8 @@ export async function exportJobsCsv(opts: { query?: string; board?: BoardKey }):
       csvDate(job.signed_off_install_date),
       csvDate(job.client_sign_off_date),
       csvDate(job.dead_at),
+      job.lost_reason ?? '',
+      job.exclude_from_metrics ? 'Yes' : '',
       job.notes ?? '',
       quoteSummaryByJob.get(job.id) ?? '',
     ]
@@ -634,11 +704,16 @@ export async function createEnquirySource(name: string) {
 export async function updateEnquirySource(id: string, name: string) {
   if (!name.trim()) return { error: 'Name cannot be empty' }
   const supabase = await createClient()
+  const { data: before } = await supabase.from('enquiry_sources').select('name').eq('id', id).single()
   const { error } = await supabase
     .from('enquiry_sources')
     .update({ name: name.trim() })
     .eq('id', id)
   if (error) return { error: error.message.includes('duplicate key') ? 'A source with that name already exists' : error.message }
+  // Marketing channels link to sources by name, so follow the rename
+  if (before?.name) {
+    await supabase.from('marketing_channels').update({ enquiry_source: name.trim() }).eq('enquiry_source', before.name)
+  }
   revalidatePath('/', 'layout')
   return { success: true }
 }

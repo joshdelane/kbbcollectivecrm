@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { XIcon, SaveIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { updateJob, createEnquirySource, deleteJob, revertJobToOrderProcessing } from '@/lib/actions'
-import { STAGES } from '@/types'
+import { updateJob, createEnquirySource, deleteJob, revertJobToEnquiries, revertJobToQualified, revertJobToOrderProcessing, updateJobEnquiryDate, archiveQualifiedLead } from '@/lib/actions'
+import { STAGES, LOST_REASONS } from '@/types'
 import type { Job, Profile, Stage, EnquirySource } from '@/types'
 import QuoteTab from './QuoteTab'
 import SnagChecklist from './SnagChecklist'
@@ -35,7 +35,11 @@ const STAGE_COLORS: Record<Stage, string> = {
   archived: '#6B7280',
 }
 
-type FormState = Partial<Omit<Job, 'id' | 'job_id' | 'stage' | 'created_at' | 'updated_at' | 'qualified_at' | 'sold_at' | 'order_placed_at' | 'dead_at'>>
+type FormState = Partial<Omit<Job, 'id' | 'job_id' | 'stage' | 'created_at' | 'updated_at'>>
+
+function toDateInput(iso: string | null | undefined): string {
+  return iso ? iso.slice(0, 10) : ''
+}
 
 const INPUT = 'w-full rounded-lg px-3 py-2 text-sm outline-none'
 const INPUT_STYLE: React.CSSProperties = { backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', color: '#1D211F' }
@@ -80,7 +84,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     proposed_install_date: job.proposed_install_date ?? '',
     order_delivery_date: job.order_delivery_date ?? '',
     deposit_amount: job.deposit_amount ?? undefined,
-    deposit_received_at: job.deposit_received_at ?? '',
+    deposit_received_at: toDateInput(job.deposit_received_at),
     fitting_days: job.fitting_days ?? undefined,
     site_dimensions_captured: job.site_dimensions_captured,
     pm_site_dimensions_captured: job.pm_site_dimensions_captured,
@@ -89,8 +93,15 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     worktop_install_date: job.worktop_install_date ?? '',
     project_signed_off: job.project_signed_off,
     client_sign_off_date: job.client_sign_off_date ?? '',
-    signed_off_at: job.signed_off_at ?? '',
+    signed_off_at: toDateInput(job.signed_off_at),
+    qualified_at: toDateInput(job.qualified_at),
+    sold_at: toDateInput(job.sold_at),
+    order_placed_at: toDateInput(job.order_placed_at),
+    dead_at: toDateInput(job.dead_at),
+    lost_reason: job.lost_reason ?? '',
+    exclude_from_metrics: job.exclude_from_metrics ?? false,
   })
+  const [enquiryDate, setEnquiryDate] = useState(toDateInput(job.created_at))
   const [addingSource, setAddingSource] = useState(false)
   const [newSourceName, setNewSourceName] = useState('')
   const [savingSource, setSavingSource] = useState(false)
@@ -99,8 +110,16 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
   const [saved, setSaved] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmRevert, setConfirmRevert] = useState(false)
+  const [reverting, setReverting] = useState(false)
   const [confirmRevertOrder, setConfirmRevertOrder] = useState(false)
   const [revertingOrder, setRevertingOrder] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
+  const [archiveReason, setArchiveReason] = useState('')
+  const [archiving, setArchiving] = useState(false)
+  const [confirmUnqualify, setConfirmUnqualify] = useState(false)
+  const [unqualifying, setUnqualifying] = useState(false)
+  const isLost = job.stage === 'archived' && !job.signed_off_at
 
   const set = (field: keyof FormState, value: string | number | boolean | null) =>
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -130,6 +149,60 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     }
   }
 
+  const handleSave = async () => {
+    // Validate all date fields have a sensible year
+    const datesToCheck: [string, string][] = [
+      ['Enquiry received', enquiryDate],
+      ...(['qualified_at', 'sold_at', 'order_placed_at', 'dead_at', 'signed_off_at',
+        'deposit_received_at', 'proposed_install_date', 'signed_off_install_date',
+        'worktop_template_date', 'worktop_install_date', 'client_sign_off_date'] as const)
+        .map((f) => [f.replace(/_/g, ' '), (form[f] as string) ?? ''] as [string, string]),
+    ]
+    for (const [label, val] of datesToCheck) {
+      if (val) {
+        const year = parseInt(val.slice(0, 4), 10)
+        if (isNaN(year) || year < 2000 || year > 2099) {
+          setError(`Invalid year in "${label}" — please enter a date between 2000 and 2099`)
+          return
+        }
+      }
+    }
+
+    setSaving(true)
+    setError('')
+    // signed_off_at / dead_at decide whether an archived job shows as Finished
+    // or Dead, so they can be changed here but not cleared
+    const toSave = { ...form }
+    if (!toSave.signed_off_at) delete toSave.signed_off_at
+    if (!toSave.dead_at) delete toSave.dead_at
+    const [jobResult, dateResult] = await Promise.all([
+      updateJob(job.id, toSave),
+      enquiryDate !== toDateInput(job.created_at)
+        ? updateJobEnquiryDate(job.id, enquiryDate)
+        : Promise.resolve({ success: true }),
+    ])
+    const err = jobResult.error ?? (dateResult as { error?: string }).error
+    if (err) {
+      setError(err)
+    } else {
+      setSaved(true)
+      setTimeout(() => onJobUpdated(), 400)
+    }
+    setSaving(false)
+  }
+
+  const handleRevert = async () => {
+    setReverting(true)
+    const result = await revertJobToQualified(job.id)
+    if (result.error) {
+      setError(result.error)
+      setReverting(false)
+      setConfirmRevert(false)
+    } else {
+      onJobUpdated()
+    }
+  }
+
   const handleRevertOrder = async () => {
     setRevertingOrder(true)
     const result = await revertJobToOrderProcessing(job.id)
@@ -142,17 +215,28 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
     }
   }
 
-  const handleSave = async () => {
-    setSaving(true)
-    setError('')
-    const result = await updateJob(job.id, form)
+  const handleArchive = async () => {
+    setArchiving(true)
+    const result = await archiveQualifiedLead(job.id, archiveReason || undefined)
     if (result.error) {
       setError(result.error)
+      setArchiving(false)
+      setConfirmArchive(false)
     } else {
-      setSaved(true)
-      setTimeout(() => onJobUpdated(), 400)
+      onJobUpdated()
     }
-    setSaving(false)
+  }
+
+  const handleUnqualify = async () => {
+    setUnqualifying(true)
+    const result = await revertJobToEnquiries(job.id)
+    if (result.error) {
+      setError(result.error)
+      setUnqualifying(false)
+      setConfirmUnqualify(false)
+    } else {
+      onJobUpdated()
+    }
   }
 
   const stageColor = STAGE_COLORS[job.stage]
@@ -246,7 +330,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
             <Field label="Postcode">
               <input className={INPUT} style={INPUT_STYLE} value={(form.postcode as string) ?? ''} onChange={(e) => set('postcode', e.target.value)} placeholder="SW1A 1AA" />
             </Field>
-            <Field label="Rough budget (£)">
+            <Field label="Rough budget (£, ex. VAT)">
               <input type="number" className={INPUT} style={INPUT_STYLE} value={(form.rough_budget as number) ?? ''} onChange={(e) => set('rough_budget', e.target.value ? parseFloat(e.target.value) : null)} placeholder="15000" />
             </Field>
           </div>
@@ -283,6 +367,22 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
             <textarea className={INPUT} style={{ ...INPUT_STYLE, resize: 'vertical' }} rows={3} value={(form.notes as string) ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="Any additional details..." />
           </Field>
 
+          <div>
+            <CheckboxField label="Exclude from sales metrics" checked={(form.exclude_from_metrics as boolean) ?? false} onChange={(v) => set('exclude_from_metrics', v)} />
+            <p className="text-xs pl-7" style={{ color: '#9CA3AF' }}>
+              For small jobs (e.g. labour only). Still counts towards sales agreed, but not average order value or close rates.
+            </p>
+          </div>
+
+          {isLost && (
+            <Field label="Lost reason">
+              <select className={INPUT} style={{ ...INPUT_STYLE, cursor: 'pointer' }} value={(form.lost_reason as string) ?? ''} onChange={(e) => set('lost_reason', e.target.value || null)}>
+                <option value="">No reason given</option>
+                {LOST_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
+          )}
+
           {stageIndex >= 1 && (
             <>
               <SectionHeading title="Qualified Lead" />
@@ -293,7 +393,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                 </select>
               </Field>
               <Field label="Date deposit received">
-                <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.deposit_received_at as string) ?? ''} onChange={(e) => set('deposit_received_at', e.target.value || null)} />
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.deposit_received_at as string) ?? ''} onChange={(e) => set('deposit_received_at', e.target.value || null)} />
               </Field>
             </>
           )}
@@ -323,7 +423,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Proposed install date">
-                  <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.proposed_install_date as string) ?? ''} onChange={(e) => set('proposed_install_date', e.target.value || null)} />
+                  <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.proposed_install_date as string) ?? ''} onChange={(e) => set('proposed_install_date', e.target.value || null)} />
                 </Field>
                 <Field label="Order delivery date">
                   <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.order_delivery_date as string) ?? ''} onChange={(e) => set('order_delivery_date', e.target.value || null)} />
@@ -342,14 +442,14 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
             <>
               <SectionHeading title="Project Management" />
               <Field label="Signed off install date">
-                <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.signed_off_install_date as string) ?? ''} onChange={(e) => set('signed_off_install_date', e.target.value || null)} />
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.signed_off_install_date as string) ?? ''} onChange={(e) => set('signed_off_install_date', e.target.value || null)} />
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Worktop template date">
-                  <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.worktop_template_date as string) ?? ''} onChange={(e) => set('worktop_template_date', e.target.value || null)} />
+                  <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.worktop_template_date as string) ?? ''} onChange={(e) => set('worktop_template_date', e.target.value || null)} />
                 </Field>
                 <Field label="Worktop install date">
-                  <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.worktop_install_date as string) ?? ''} onChange={(e) => set('worktop_install_date', e.target.value || null)} />
+                  <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.worktop_install_date as string) ?? ''} onChange={(e) => set('worktop_install_date', e.target.value || null)} />
                 </Field>
               </div>
               <Field label="Installer assigned">
@@ -364,30 +464,41 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
               </Field>
               <CheckboxField label="Project signed off by customer" checked={(form.project_signed_off as boolean) ?? false} onChange={(v) => set('project_signed_off', v)} />
               <Field label="Client sign-off date">
-                <input type="date" className={INPUT} style={INPUT_STYLE} value={(form.client_sign_off_date as string) ?? ''} onChange={(e) => set('client_sign_off_date', e.target.value || null)} />
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.client_sign_off_date as string) ?? ''} onChange={(e) => set('client_sign_off_date', e.target.value || null)} />
               </Field>
             </>
           )}
 
           <SectionHeading title="History" />
-          <div className="space-y-2 pb-4">
-            {[
-              { label: 'Enquiry received', date: job.created_at },
-              { label: 'Qualified', date: job.qualified_at },
-              { label: 'Project sold', date: job.sold_at },
-              { label: 'Order placed', date: job.order_placed_at },
-              { label: 'Signed off', date: job.signed_off_at },
-              { label: 'Marked dead', date: job.dead_at },
-            ]
-              .filter((h) => h.date)
-              .map((h) => (
-                <div key={h.label} className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: h.label === 'Marked dead' ? '#EF4444' : '#6B7280' }}>{h.label}</span>
-                  <span className="text-xs font-medium" style={{ color: '#374151' }}>
-                    {new Date(h.date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                </div>
-              ))}
+          <div className="space-y-3 pb-4">
+            <Field label="Enquiry received">
+              <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={enquiryDate} onChange={(e) => setEnquiryDate(e.target.value)} />
+            </Field>
+            {stageIndex >= 1 && (
+              <Field label="Qualified date">
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.qualified_at as string) ?? ''} onChange={(e) => set('qualified_at', e.target.value || null)} />
+              </Field>
+            )}
+            {stageIndex >= 2 && (
+              <Field label="Project sold date">
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.sold_at as string) ?? ''} onChange={(e) => set('sold_at', e.target.value || null)} />
+              </Field>
+            )}
+            {stageIndex >= 3 && (
+              <Field label="Order placed date">
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.order_placed_at as string) ?? ''} onChange={(e) => set('order_placed_at', e.target.value || null)} />
+              </Field>
+            )}
+            {job.signed_off_at && (
+              <Field label="Signed off date">
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.signed_off_at as string) ?? ''} onChange={(e) => set('signed_off_at', e.target.value || null)} />
+              </Field>
+            )}
+            {job.dead_at && (
+              <Field label="Marked dead">
+                <input type="date" className={INPUT} style={INPUT_STYLE} min="2000-01-01" max="2099-12-31" value={(form.dead_at as string) ?? ''} onChange={(e) => set('dead_at', e.target.value || null)} />
+              </Field>
+            )}
           </div>
         </div>
 
@@ -399,6 +510,34 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
               <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#DC2626' }}>
                 <Trash2Icon size={14} />
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </>
+          ) : confirmArchive ? (
+            <>
+              <p className="text-xs font-medium" style={{ color: '#6B7280' }}>Archive this lead?</p>
+              <select className="flex-1 rounded-lg px-2 py-2 text-xs outline-none" style={INPUT_STYLE} value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)}>
+                <option value="">Why was it lost?</option>
+                {LOST_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <button onClick={() => setConfirmArchive(false)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleArchive} disabled={archiving} className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#6B7280' }}>
+                {archiving ? 'Archiving...' : 'Yes, Archive'}
+              </button>
+            </>
+          ) : confirmUnqualify ? (
+            <>
+              <p className="text-xs flex-1 font-medium" style={{ color: '#6B7280' }}>Move back to Enquiries?</p>
+              <button onClick={() => setConfirmUnqualify(false)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleUnqualify} disabled={unqualifying} className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#3B82F6' }}>
+                {unqualifying ? 'Moving...' : 'Yes, Move Back'}
+              </button>
+            </>
+          ) : confirmRevert ? (
+            <>
+              <p className="text-xs flex-1 font-medium" style={{ color: '#6B7280' }}>Move back to Qualified Lead?</p>
+              <button onClick={() => setConfirmRevert(false)} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Cancel</button>
+              <button onClick={handleRevert} disabled={reverting} className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#8B5CF6' }}>
+                {reverting ? 'Moving...' : 'Yes, Move Back'}
               </button>
             </>
           ) : confirmRevertOrder ? (
@@ -415,6 +554,21 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                 <Trash2Icon size={14} />
                 Delete
               </button>
+              {job.stage === 'qualified_leads' && (
+                <button onClick={() => setConfirmUnqualify(true)} className="px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}>
+                  ← Back to Enquiries
+                </button>
+              )}
+              {job.stage === 'qualified_leads' && (
+                <button onClick={() => setConfirmArchive(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#F9FAFB', color: '#6B7280', border: '1px solid #E5E7EB' }}>
+                  Archive
+                </button>
+              )}
+              {job.stage === 'order_processing' && (
+                <button onClick={() => setConfirmRevert(true)} className="px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
+                  ← Back to Qualified
+                </button>
+              )}
               {job.stage === 'project_management' && (
                 <button onClick={() => setConfirmRevertOrder(true)} className="px-3 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
                   ← Back to Order Processing

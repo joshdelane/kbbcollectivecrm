@@ -149,7 +149,7 @@ export default function NewJobModal({ profiles, enquirySources, onSourceAdded, o
               <input value={form.postcode} onChange={(e) => set('postcode', e.target.value)} placeholder="SW1A 1AA" style={INPUT_STYLE} />
             </div>
             <div>
-              <label style={LABEL_STYLE}>Rough budget (£)</label>
+              <label style={LABEL_STYLE}>Rough budget (£, ex. VAT)</label>
               <input type="number" value={form.rough_budget} onChange={(e) => set('rough_budget', e.target.value)} placeholder="15000" style={INPUT_STYLE} />
             </div>
           </div>

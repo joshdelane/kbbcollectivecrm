@@ -1,87 +1,22 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts } from '@/lib/data'
+import { getStageCounts, getTodoData } from '@/lib/data'
 import Sidebar from '@/components/layout/Sidebar'
 import TodoView from '@/components/todo/TodoView'
-import type { SnagItem } from '@/types'
 
 export default async function TodoPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 12 weeks from today
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() + 84)
-  const cutoffISO = cutoff.toISOString().slice(0, 10)
-  const todayISO = new Date().toISOString().slice(0, 10)
-
-  // Jobs in project_management with install date within 12 weeks
-  const [{ data: jobs }, stageCounts] = await Promise.all([
-    supabase
-      .from('jobs')
-      .select('id, job_id, customer_name, signed_off_install_date')
-      .eq('stage', 'project_management')
-      .not('signed_off_install_date', 'is', null)
-      .gte('signed_off_install_date', todayISO)
-      .lte('signed_off_install_date', cutoffISO)
-      .order('signed_off_install_date', { ascending: true }),
+  const [{ jobsWithLines, jobsWithSnags, count }, stageCounts] = await Promise.all([
+    getTodoData(),
     getStageCounts(),
   ])
 
-  if (!jobs || jobs.length === 0) {
-    return (
-      <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
-        <Sidebar stageCounts={stageCounts} todoCount={0} />
-        <main className="flex-1 overflow-y-auto">
-          <TodoView jobsWithLines={[]} jobsWithSnags={[]} />
-        </main>
-      </div>
-    )
-  }
-
-  // Fetch unordered quote lines and open snag items for those jobs
-  const jobIds = jobs.map((j) => j.id)
-  const [{ data: lines }, { data: jobRevisions }, { data: snags }] = await Promise.all([
-    supabase
-      .from('quote_lines')
-      .select('id, job_id, category, description, retail_price, is_ordered, revision_number')
-      .in('job_id', jobIds)
-      .eq('is_ordered', false)
-      .order('sort_order', { ascending: true }),
-    supabase.from('jobs').select('id, quote_revision').in('id', jobIds),
-    supabase
-      .from('snag_items')
-      .select('*')
-      .in('job_id', jobIds)
-      .eq('is_done', false)
-      .order('sort_order', { ascending: true }),
-  ])
-
-  const revMap: Record<string, number> = {}
-  jobRevisions?.forEach((j) => { revMap[j.id] = j.quote_revision ?? 1 })
-
-  type LineRow = { id: string; job_id: string; category: string | null; description: string; retail_price: number | null; is_ordered: boolean; revision_number: number }
-
-  const jobsWithLines = jobs.map((job) => {
-    const latestRev = revMap[job.id] ?? 1
-    const jobLines = (lines as LineRow[] ?? []).filter(
-      (l) => l.job_id === job.id && l.revision_number === latestRev && l.description.trim()
-    )
-    return { job, lines: jobLines }
-  }).filter((jl) => jl.lines.length > 0)
-
-  const jobsWithSnags = jobs.map((job) => {
-    const jobSnags = (snags as SnagItem[] ?? []).filter((s) => s.job_id === job.id)
-    return { job, snags: jobSnags }
-  }).filter((js) => js.snags.length > 0)
-
-  const outstandingLines = jobsWithLines.reduce((n, jl) => n + jl.lines.length, 0)
-  const todoCount = outstandingLines + (snags?.length ?? 0)
-
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
-      <Sidebar stageCounts={stageCounts} todoCount={todoCount} />
+      <Sidebar stageCounts={stageCounts} todoCount={count} />
       <main className="flex-1 overflow-y-auto">
         <TodoView jobsWithLines={jobsWithLines} jobsWithSnags={jobsWithSnags} />
       </main>

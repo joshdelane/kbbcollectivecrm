@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import DateRangePicker from '@/components/shared/DateRangePicker'
 import type { BoardKey } from '@/types'
+import type { SourceCostRow } from '@/lib/data'
 
 interface DashboardViewProps {
   rangeLabel: string
@@ -25,6 +26,8 @@ interface DashboardViewProps {
   stageCounts: Partial<Record<BoardKey, number>>
   totalJobs: number
   hasMarketingSpend: boolean
+  sourceCosts: SourceCostRow[]
+  lostReasons: { reason: string; count: number }[]
 }
 
 function StatCard({
@@ -86,6 +89,8 @@ export default function DashboardView({
   stageCounts,
   totalJobs,
   hasMarketingSpend,
+  sourceCosts,
+  lostReasons,
 }: DashboardViewProps) {
   const pipelineTotal =
     (stageCounts.enquiries ?? 0) +
@@ -156,8 +161,8 @@ export default function DashboardView({
           value={grossMarginPct !== null ? `${grossMarginPct}%` : '—'}
           sub={
             grossMarginPct !== null
-              ? `Avg across ${grossMarginJobCount} PM job${grossMarginJobCount !== 1 ? 's' : ''}`
-              : 'Add cost prices to quotes'
+              ? `Avg across ${grossMarginJobCount} won job${grossMarginJobCount !== 1 ? 's' : ''}`
+              : 'No costed won jobs this period'
           }
           accent={grossMarginPct !== null}
         />
@@ -254,6 +259,77 @@ export default function DashboardView({
             <p className="text-xs" style={{ color: '#4A5250' }}>
               Appears once qualified leads have a budget and enough historical data exists per source
             </p>
+          )}
+        </div>
+      </div>
+
+      {/* Cost per lead by source + lost reasons */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div className="rounded-xl p-6 lg:col-span-2" style={{ backgroundColor: '#252B28' }}>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#6B7280' }}>
+            Cost per Lead by Source
+          </p>
+          <p className="text-xs mb-4" style={{ color: '#4A5250' }}>
+            Spend reaches a source through the channels linked to it on the{' '}
+            <Link href="/marketing" className="underline underline-offset-2" style={{ color: '#B89763' }}>Marketing</Link> page
+          </p>
+          {sourceCosts.length === 0 ? (
+            <p className="text-xs" style={{ color: '#4A5250' }}>No enquiries or spend this period</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {['Source', 'Spend', 'Enquiries', 'Per enquiry', 'Qualified', 'Per qualified', 'Sales', 'Per sale'].map((h, i) => (
+                      <th key={h} className={`pb-2 text-xs font-semibold uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`} style={{ color: '#6B7280' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceCosts.map((r) => {
+                    const per = (n: number) => (r.spend > 0 && n > 0 ? fmt(Math.round(r.spend / n)) : '—')
+                    return (
+                      <tr key={r.source || '__unlinked__'} style={{ borderTop: '1px solid #1E2422' }}>
+                        <td className="py-2 text-left" style={{ color: r.source ? '#FFFFFF' : '#6B7280' }}>{r.source || 'Not linked to a source'}</td>
+                        <td className="py-2 text-right" style={{ color: '#9CA3AF' }}>{r.spend > 0 ? fmt(r.spend) : '—'}</td>
+                        <td className="py-2 text-right" style={{ color: '#9CA3AF' }}>{r.source ? r.enquiries : '—'}</td>
+                        <td className="py-2 text-right font-semibold" style={{ color: '#B89763' }}>{r.source ? per(r.enquiries) : '—'}</td>
+                        <td className="py-2 text-right" style={{ color: '#9CA3AF' }}>{r.source ? r.qualified : '—'}</td>
+                        <td className="py-2 text-right font-semibold" style={{ color: '#B89763' }}>{r.source ? per(r.qualified) : '—'}</td>
+                        <td className="py-2 text-right" style={{ color: '#9CA3AF' }}>{r.source ? r.sales : '—'}</td>
+                        <td className="py-2 text-right font-semibold" style={{ color: '#B89763' }}>{r.source ? per(r.sales) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl p-6" style={{ backgroundColor: '#252B28' }}>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: '#6B7280' }}>
+            Why We Lost Work
+          </p>
+          {lostReasons.length === 0 ? (
+            <p className="text-xs" style={{ color: '#4A5250' }}>No leads lost this period</p>
+          ) : (
+            <div className="space-y-3">
+              {(() => {
+                const max = Math.max(...lostReasons.map((r) => r.count))
+                return lostReasons.map((r) => (
+                  <div key={r.reason}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm" style={{ color: r.reason === 'No reason given' ? '#6B7280' : '#9CA3AF' }}>{r.reason}</span>
+                      <span className="text-sm font-semibold text-white">{r.count}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
+                      <div className="h-full rounded-full" style={{ width: `${(r.count / max) * 100}%`, backgroundColor: '#EF4444' }} />
+                    </div>
+                  </div>
+                ))
+              })()}
+            </div>
           )}
         </div>
       </div>

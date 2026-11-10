@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { PlusIcon, Trash2Icon, SaveIcon, Maximize2Icon, PrinterIcon, XIcon, CopyPlusIcon, TagIcon } from 'lucide-react'
 import { getQuoteLines, getQuoteRevisionNumbers, saveQuoteLines, createQuoteRevision, getOrgLogo, saveOrgLogo, getOrgTermsAndConditions } from '@/lib/actions'
-import { QUOTE_CATEGORIES } from '@/types'
+import { QUOTE_CATEGORIES, PASS_THROUGH_CATEGORY } from '@/types'
 import type { Job, QuoteCategory } from '@/types'
 
 interface LineItem {
@@ -202,7 +202,10 @@ function FullScreenQuote({
   const totalCost = lines.reduce((s, l) => s + parseNum(l.cost_price), 0)
   const totalNet = lines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
   const totalDiscount = totalRetail - totalNet
-  const totalMargin = totalNet - totalCost
+  // Pass-through lines are re-invoiced at cost, so they're left out of margin
+  const marginLines = lines.filter((l) => l.category !== PASS_THROUGH_CATEGORY)
+  const marginNet = marginLines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
+  const totalMargin = marginNet - marginLines.reduce((s, l) => s + parseNum(l.cost_price), 0)
   const hasDiscount = totalDiscount > 0.001
 
   // Group lines by category for display
@@ -363,7 +366,7 @@ function FullScreenQuote({
                 {totalNet > 0 && (
                   <div className="flex items-center justify-between px-4 py-2">
                     <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Margin %</span>
-                    <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalNet) * 100).toFixed(1)}%</span>
+                    <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((marginNet > 0 ? totalMargin / marginNet : 0) * 100).toFixed(1)}%</span>
                   </div>
                 )}
               </div>
@@ -517,7 +520,10 @@ export default function QuoteTab({ job }: { job: Job }) {
   const totalCost = lines.reduce((s, l) => s + parseNum(l.cost_price), 0)
   const totalNet = lines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
   const totalDiscount = totalRetail - totalNet
-  const totalMargin = totalNet - totalCost
+  // Pass-through lines are re-invoiced at cost, so they're left out of margin
+  const marginLines = lines.filter((l) => l.category !== PASS_THROUGH_CATEGORY)
+  const marginNet = marginLines.reduce((s, l) => s + netPrice(parseNum(l.retail_price), parseNum(l.discount_percent)), 0)
+  const totalMargin = marginNet - marginLines.reduce((s, l) => s + parseNum(l.cost_price), 0)
   const hasDiscount = totalDiscount > 0.001
   const isLatest = activeRevision === latestRevision
   const isArchived = job.stage === 'archived'
@@ -811,7 +817,7 @@ export default function QuoteTab({ job }: { job: Job }) {
                   {totalNet > 0 && (
                     <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: '#F9FAFB', borderTop: '1px solid #E5E7EB' }}>
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#9CA3AF' }}>Margin %</span>
-                      <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((totalMargin / totalNet) * 100).toFixed(1)}%</span>
+                      <span className="text-sm font-bold" style={{ color: totalMargin >= 0 ? '#059669' : '#DC2626' }}>{((marginNet > 0 ? totalMargin / marginNet : 0) * 100).toFixed(1)}%</span>
                     </div>
                   )}
                 </div>

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getStageCounts, getSourceCloseRates, getMarketingSpendTotal, getGrossMarginData, getTodoCount } from '@/lib/data'
+import { getStageCounts, getSourceCloseRates, getMarketingSpendTotal, getGrossMarginData, getTodoCount, getSourceCostPerLead, getLostReasons } from '@/lib/data'
 import { getDateRange } from '@/lib/dateRange'
 import Sidebar from '@/components/layout/Sidebar'
 import DashboardView from '@/components/dashboard/DashboardView'
@@ -28,17 +28,19 @@ export default async function DashboardPage({ searchParams }: Props) {
     marketingSpend,
     grossMarginData,
     todoCount,
+    sourceCosts,
+    lostReasons,
   ] = await Promise.all([
     supabase.from('jobs').select('stage').is('deleted_at', null),
     supabase
       .from('jobs')
-      .select('stage, qualified_at, dead_at, created_at')
+      .select('stage, qualified_at, dead_at, created_at, exclude_from_metrics')
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
       .is('deleted_at', null),
     supabase
       .from('jobs')
-      .select('sold_at, order_valuation')
+      .select('sold_at, order_valuation, exclude_from_metrics')
       .gte('sold_at', start.toISOString())
       .lte('sold_at', end.toISOString())
       .is('deleted_at', null),
@@ -46,12 +48,18 @@ export default async function DashboardPage({ searchParams }: Props) {
     getStageCounts(),
     getSourceCloseRates(),
     getMarketingSpendTotal(start, end),
-    getGrossMarginData(),
+    getGrossMarginData(start, end),
     getTodoCount(),
+    getSourceCostPerLead(start, end),
+    getLostReasons(start, end),
   ])
 
-  const jobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'created_at'>[]) ?? []
-  const sales = (soldJobs as Pick<Job, 'sold_at' | 'order_valuation'>[]) ?? []
+  const allPeriodJobs = (filteredJobs as Pick<Job, 'stage' | 'qualified_at' | 'dead_at' | 'created_at' | 'exclude_from_metrics'>[]) ?? []
+  const allSales = (soldJobs as Pick<Job, 'sold_at' | 'order_valuation' | 'exclude_from_metrics'>[]) ?? []
+  // Jobs ticked "exclude from sales metrics" (e.g. small labour jobs) count
+  // towards sales agreed, but not AOV, conversion, CVR or CPA
+  const jobs = allPeriodJobs.filter((j) => !j.exclude_from_metrics)
+  const sales = allSales.filter((j) => !j.exclude_from_metrics)
   const totalJobsAllStages = allJobs?.length ?? 0
 
   // Conversion rate: qualified / (qualified + dead) for enquiries created in period
@@ -63,13 +71,14 @@ export default async function DashboardPage({ searchParams }: Props) {
     : null
 
   // Sales agreed: sum of order_valuation for jobs marked sold in period
-  const salesAgreed = sales.reduce((sum, j) => sum + (j.order_valuation ?? 0), 0)
+  const salesAgreed = allSales.reduce((sum, j) => sum + (j.order_valuation ?? 0), 0)
+  const metricSalesValue = sales.reduce((sum, j) => sum + (j.order_valuation ?? 0), 0)
 
   // Sold count: jobs with a non-zero order_valuation sold in period (used for AOV)
   const soldCount = sales.filter((j) => j.order_valuation !== null && j.order_valuation > 0).length
 
   // AOV: average order value = total sales / number of sales
-  const aov = soldCount > 0 ? Math.round(salesAgreed / soldCount) : null
+  const aov = soldCount > 0 ? Math.round(metricSalesValue / soldCount) : null
 
   // CPL: cost per qualified lead = total marketing spend / qualified leads in period
   const cpl = marketingSpend > 0 && qualified > 0
@@ -92,7 +101,7 @@ export default async function DashboardPage({ searchParams }: Props) {
   }, 0)
 
   // Period stats
-  const periodEnquiries = jobs.length
+  const periodEnquiries = allPeriodJobs.length
   const periodQualified = qualified
   const periodDead = dead
 
@@ -121,6 +130,8 @@ export default async function DashboardPage({ searchParams }: Props) {
           stageCounts={stageCounts}
           totalJobs={totalJobsAllStages}
           hasMarketingSpend={marketingSpend > 0}
+          sourceCosts={sourceCosts}
+          lostReasons={lostReasons}
         />
       </main>
     </div>

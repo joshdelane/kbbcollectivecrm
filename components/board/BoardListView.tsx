@@ -9,6 +9,7 @@ import { STAGE_ACTIONS } from '@/types'
 import type { Job, Profile, EnquirySource, BoardKey } from '@/types'
 import JobDetailPanel from '@/components/jobs/JobDetailPanel'
 import NewJobModal from '@/components/jobs/NewJobModal'
+import StageConfirmDialog, { type StageMove } from './StageConfirmDialog'
 
 interface BoardListViewProps {
   board: BoardKey
@@ -184,6 +185,7 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
   const [isNewJobOpen, setIsNewJobOpen] = useState(false)
   const [sources, setSources] = useState<EnquirySource[]>(enquirySources)
   const [advancing, setAdvancing] = useState<string | null>(null)
+  const [pendingMove, setPendingMove] = useState<{ job: Job; move: StageMove } | null>(null)
   const [sort, setSort] = useState<SortState | null>(null)
   const [filterMinValue, setFilterMinValue] = useState('')
   const [exporting, setExporting] = useState(false)
@@ -218,20 +220,17 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
     return jobs
   }, [initialJobs, sort, filterMinValue])
 
-  const handleAdvance = async (job: Job) => {
-    if (advancing) return
+  // Advance / Dead / Archive all go through a confirm step first
+  const handleConfirmMove = async (lostReason?: string) => {
+    if (!pendingMove || advancing) return
+    const { job, move } = pendingMove
     setAdvancing(job.id)
-    await advanceJobStage(job.id, job.stage)
+    if (move === 'advance') await advanceJobStage(job.id, job.stage)
+    else if (move === 'dead') await markJobDead(job.id, lostReason)
+    else await archiveQualifiedLead(job.id, lostReason)
     router.refresh()
     setAdvancing(null)
-  }
-
-  const handleDead = async (job: Job) => {
-    if (advancing) return
-    setAdvancing(job.id)
-    await markJobDead(job.id)
-    router.refresh()
-    setAdvancing(null)
+    setPendingMove(null)
   }
 
   const handleRevive = async (job: Job) => {
@@ -242,13 +241,6 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
     setAdvancing(null)
   }
 
-  const handleArchive = async (job: Job) => {
-    if (advancing) return
-    setAdvancing(job.id)
-    await archiveQualifiedLead(job.id)
-    router.refresh()
-    setAdvancing(null)
-  }
 
   const handleExport = async () => {
     setExporting(true)
@@ -429,9 +421,9 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
                   <TD>
                     <ActionCell
                       job={job}
-                      onAdvance={() => handleAdvance(job)}
-                      onDead={board === 'enquiries' ? () => handleDead(job) : undefined}
-                      onArchive={board === 'qualified_leads' ? () => handleArchive(job) : undefined}
+                      onAdvance={() => setPendingMove({ job, move: 'advance' })}
+                      onDead={board === 'enquiries' ? () => setPendingMove({ job, move: 'dead' }) : undefined}
+                      onArchive={board === 'qualified_leads' ? () => setPendingMove({ job, move: 'archive' }) : undefined}
                       onRevive={isArchivedBoard ? () => handleRevive(job) : undefined}
                     />
                   </TD>
@@ -443,6 +435,16 @@ export default function BoardListView({ board, initialJobs, profiles, enquirySou
           </>
         )}
       </div>
+
+      {pendingMove && (
+        <StageConfirmDialog
+          job={pendingMove.job}
+          move={pendingMove.move}
+          busy={advancing === pendingMove.job.id}
+          onConfirm={handleConfirmMove}
+          onCancel={() => setPendingMove(null)}
+        />
+      )}
 
       {selectedJob && (
         <JobDetailPanel

@@ -3,23 +3,7 @@
 import { useState } from 'react'
 import { toggleSnagItem } from '@/lib/actions'
 import type { SnagItem } from '@/types'
-
-interface TodoLine {
-  id: string
-  job_id: string
-  category: string | null
-  description: string
-  retail_price: number | null
-  is_ordered: boolean
-  revision_number: number
-}
-
-interface TodoJob {
-  id: string
-  job_id: string
-  customer_name: string
-  signed_off_install_date: string
-}
+import type { TodoJob, TodoLine } from '@/lib/data'
 
 interface JobWithLines {
   job: TodoJob
@@ -69,23 +53,26 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
   jobsWithSnags.forEach(({ job }) => jobMap.set(job.id, job))
   const linesByJob = Object.fromEntries(jobsWithLines.map(({ job, lines }) => [job.id, lines]))
 
-  const jobs = [...jobMap.values()].sort(
-    (a, b) => new Date(a.signed_off_install_date).getTime() - new Date(b.signed_off_install_date).getTime()
-  )
+  // Soonest install first; jobs with no install date go last
+  const jobs = [...jobMap.values()].sort((a, b) => {
+    if (!a.signed_off_install_date) return 1
+    if (!b.signed_off_install_date) return -1
+    return new Date(a.signed_off_install_date).getTime() - new Date(b.signed_off_install_date).getTime()
+  })
 
   return (
     <div className="px-8 py-8 max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">To-Do</h1>
         <p className="text-sm mt-1" style={{ color: '#6B7280' }}>
-          Unordered items and open snags from jobs fitting within the next 12 weeks
+          Unordered items for jobs fitting in the next 12 weeks, plus every open snag
         </p>
       </div>
 
       {jobs.length === 0 ? (
         <div className="rounded-xl flex flex-col items-center justify-center py-20" style={{ border: '1px solid #252B28' }}>
           <p className="text-sm font-medium text-white">All clear</p>
-          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items or open snags for upcoming installs.</p>
+          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items for upcoming installs and no open snags.</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -93,8 +80,11 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
             const lines = linesByJob[job.id] ?? []
             const snags = snagsByJob[job.id] ?? []
             if (lines.length === 0 && snags.length === 0) return null
-            const days = daysUntil(job.signed_off_install_date)
-            const urgentColor = days <= 14 ? '#EF4444' : days <= 28 ? '#F59E0B' : '#10B981'
+            const days = job.signed_off_install_date ? daysUntil(job.signed_off_install_date) : null
+            const urgentColor = days === null || days < 0 ? '#6B7280' : days <= 14 ? '#EF4444' : days <= 28 ? '#F59E0B' : '#10B981'
+            const daysLabel = days === null ? 'No install date'
+              : days === 0 ? 'Today' : days === 1 ? 'Tomorrow'
+              : days < 0 ? 'Installed' : `${days} days`
 
             // Group lines by category
             const catMap: Record<string, TodoLine[]> = {}
@@ -117,11 +107,13 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
                     <span className="text-sm font-semibold text-white">{job.customer_name}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs" style={{ color: '#6B7280' }}>
-                      Install: {fmtDate(job.signed_off_install_date)}
-                    </span>
+                    {job.signed_off_install_date && (
+                      <span className="text-xs" style={{ color: '#6B7280' }}>
+                        Install: {fmtDate(job.signed_off_install_date)}
+                      </span>
+                    )}
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: urgentColor + '22', color: urgentColor }}>
-                      {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days`}
+                      {daysLabel}
                     </span>
                   </div>
                 </div>

@@ -6,6 +6,7 @@ import { ChevronRightIcon } from 'lucide-react'
 import { advanceJobStage } from '@/lib/actions'
 import { STAGE_ACTIONS } from '@/types'
 import type { Job, Profile } from '@/types'
+import StageConfirmDialog from './StageConfirmDialog'
 
 interface JobCardProps {
   job: Job
@@ -35,16 +36,17 @@ function formatDate(dateStr: string | null): string {
 
 export default function JobCard({ job, profiles, onClick }: JobCardProps) {
   const [advancing, setAdvancing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const router = useRouter()
   const action = STAGE_ACTIONS[job.stage]
 
-  const handleAdvance = async (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleAdvance = async () => {
     if (!action || advancing) return
     setAdvancing(true)
     await advanceJobStage(job.id, job.stage)
     router.refresh()
     setAdvancing(false)
+    setConfirming(false)
   }
 
   const assignedTo =
@@ -131,7 +133,7 @@ export default function JobCard({ job, profiles, onClick }: JobCardProps) {
 
         {action && (
           <button
-            onClick={handleAdvance}
+            onClick={(e) => { e.stopPropagation(); setConfirming(true) }}
             disabled={advancing}
             className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: '#B89763' }}
@@ -141,6 +143,9 @@ export default function JobCard({ job, profiles, onClick }: JobCardProps) {
           </button>
         )}
       </div>
+      {confirming && (
+        <StageConfirmDialog job={job} move="advance" busy={advancing} onConfirm={handleAdvance} onCancel={() => setConfirming(false)} />
+      )}
     </div>
   )
 }

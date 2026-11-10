@@ -2,18 +2,16 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusIcon, Trash2Icon, TrendingUpIcon } from 'lucide-react'
+import { PlusIcon, Trash2Icon, TrendingUpIcon, Settings2Icon } from 'lucide-react'
 import { createMarketingSpend, deleteMarketingSpend } from '@/lib/actions'
-import { MARKETING_CHANNELS } from '@/types'
-import type { MarketingSpend, MarketingChannel } from '@/types'
+import ChannelManager from './ChannelManager'
+import type { MarketingSpend, MarketingChannel, EnquirySource } from '@/types'
 
 interface MarketingViewProps {
   initialSpend: MarketingSpend[]
+  channels: MarketingChannel[]
+  enquirySources: EnquirySource[]
 }
-
-const CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
-  MARKETING_CHANNELS.map((c) => [c.key, c.label])
-)
 
 function fmt(n: number) {
   return `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -33,13 +31,15 @@ function currentMonthValue() {
   return `${y}-${m}-01`
 }
 
-export default function MarketingView({ initialSpend }: MarketingViewProps) {
+export default function MarketingView({ initialSpend, channels, enquirySources }: MarketingViewProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
   // Form state
   const [showForm, setShowForm] = useState(false)
-  const [channel, setChannel] = useState<MarketingChannel>('google_ads')
+  const [channelId, setChannelId] = useState(channels[0]?.id ?? '')
+  const [showChannels, setShowChannels] = useState(false)
+  const channelName = (row: MarketingSpend) => channels.find((c) => c.id === row.channel_id)?.name ?? row.channel
   const [amount, setAmount] = useState('')
   const [month, setMonth] = useState(currentMonthValue())
   const [notes, setNotes] = useState('')
@@ -53,10 +53,16 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
       setError('Please enter a valid amount greater than 0.')
       return
     }
+    const ch = channels.find((c) => c.id === channelId)
+    if (!ch) {
+      setError('Please choose a channel.')
+      return
+    }
     setSaving(true)
     setError(null)
     const result = await createMarketingSpend({
-      channel,
+      channel: ch.name,
+      channel_id: ch.id,
       amount: amt,
       spend_month: month,
       notes: notes.trim() || undefined,
@@ -66,7 +72,7 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
       setError(result.error)
     } else {
       setShowForm(false)
-      setChannel('google_ads')
+      setChannelId(channels[0]?.id ?? '')
       setAmount('')
       setMonth(currentMonthValue())
       setNotes('')
@@ -82,10 +88,11 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
   }
 
   // Totals by channel
-  const totalByChannel = MARKETING_CHANNELS.map((ch) => ({
-    ...ch,
+  const totalByChannel = channels.map((ch) => ({
+    key: ch.id,
+    label: ch.name,
     total: initialSpend
-      .filter((s) => s.channel === ch.key)
+      .filter((s) => s.channel_id === ch.id)
       .reduce((sum, s) => sum + Number(s.amount), 0),
   })).filter((ch) => ch.total > 0)
 
@@ -104,6 +111,15 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
             </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowChannels((v) => !v)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/5"
+          style={{ color: '#9CA3AF', border: '1px solid #3A4040' }}
+        >
+          <Settings2Icon size={15} />
+          Channels
+        </button>
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
@@ -112,7 +128,12 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
           <PlusIcon size={15} />
           Add Entry
         </button>
+        </div>
       </div>
+
+      {showChannels && (
+        <ChannelManager channels={channels} enquirySources={enquirySources} spend={initialSpend} />
+      )}
 
       {/* Summary cards */}
       {totalByChannel.length > 0 && (
@@ -149,13 +170,13 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
                 Channel
               </label>
               <select
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as MarketingChannel)}
+                value={channelId}
+                onChange={(e) => setChannelId(e.target.value)}
                 className="rounded-lg px-3 py-2 text-sm text-white outline-none"
                 style={{ backgroundColor: '#1D211F', border: '1px solid #3A4040' }}
               >
-                {MARKETING_CHANNELS.map((c) => (
-                  <option key={c.key} value={c.key}>{c.label}</option>
+                {channels.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -266,7 +287,7 @@ export default function MarketingView({ initialSpend }: MarketingViewProps) {
                     {formatMonth(row.spend_month)}
                   </td>
                   <td className="px-4 py-3 text-sm" style={{ color: '#9CA3AF', borderBottom: '1px solid #1E2422' }}>
-                    {CHANNEL_LABELS[row.channel] ?? row.channel}
+                    {channelName(row)}
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold" style={{ color: '#B89763', borderBottom: '1px solid #1E2422' }}>
                     {fmt(Number(row.amount))}
