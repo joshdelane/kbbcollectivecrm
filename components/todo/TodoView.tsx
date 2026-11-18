@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { toggleSnagItem } from '@/lib/actions'
-import type { SnagItem } from '@/types'
+import { toggleSnagItem, toggleJobTask } from '@/lib/actions'
+import type { SnagItem, JobTask } from '@/types'
 import type { TodoJob, TodoLine } from '@/lib/data'
 
 interface JobWithLines {
@@ -13,6 +13,11 @@ interface JobWithLines {
 interface JobWithSnags {
   job: TodoJob
   snags: SnagItem[]
+}
+
+interface JobWithTasks {
+  job: TodoJob
+  tasks: JobTask[]
 }
 
 function fmtDate(d: string) {
@@ -34,10 +39,26 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Installation': '#10B981',
 }
 
-export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLines: JobWithLines[]; jobsWithSnags: JobWithSnags[] }) {
+export default function TodoView({ jobsWithLines, jobsWithSnags, jobsWithTasks }: {
+  jobsWithLines: JobWithLines[]
+  jobsWithSnags: JobWithSnags[]
+  jobsWithTasks: JobWithTasks[]
+}) {
   const [snagsByJob, setSnagsByJob] = useState<Record<string, SnagItem[]>>(
     () => Object.fromEntries(jobsWithSnags.map(({ job, snags }) => [job.id, snags]))
   )
+  const [tasksByJob, setTasksByJob] = useState<Record<string, JobTask[]>>(
+    () => Object.fromEntries(jobsWithTasks.map(({ job, tasks }) => [job.id, tasks]))
+  )
+  const todayISO = new Date().toISOString().slice(0, 10)
+
+  const handleToggleTask = async (jobId: string, task: JobTask) => {
+    setTasksByJob((prev) => ({
+      ...prev,
+      [jobId]: prev[jobId].filter((t) => t.id !== task.id),
+    }))
+    await toggleJobTask(task.id, true)
+  }
 
   const handleToggleSnag = async (jobId: string, item: SnagItem) => {
     setSnagsByJob((prev) => ({
@@ -47,10 +68,11 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
     await toggleSnagItem(item.id, true)
   }
 
-  // Union of jobs that have either outstanding quote lines or outstanding snags
+  // Union of jobs that have outstanding quote lines, snags or tasks
   const jobMap = new Map<string, TodoJob>()
   jobsWithLines.forEach(({ job }) => jobMap.set(job.id, job))
   jobsWithSnags.forEach(({ job }) => jobMap.set(job.id, job))
+  jobsWithTasks.forEach(({ job }) => jobMap.set(job.id, job))
   const linesByJob = Object.fromEntries(jobsWithLines.map(({ job, lines }) => [job.id, lines]))
 
   // Soonest install first; jobs with no install date go last
@@ -65,21 +87,22 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">To-Do</h1>
         <p className="text-sm mt-1" style={{ color: '#6B7280' }}>
-          Unordered items for jobs fitting in the next 12 weeks, plus every open snag
+          Unordered items for jobs fitting in the next 12 weeks, plus every open task and snag
         </p>
       </div>
 
       {jobs.length === 0 ? (
         <div className="rounded-xl flex flex-col items-center justify-center py-20" style={{ border: '1px solid #252B28' }}>
           <p className="text-sm font-medium text-white">All clear</p>
-          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items for upcoming installs and no open snags.</p>
+          <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No unordered items for upcoming installs and no open tasks or snags.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {jobs.map((job) => {
             const lines = linesByJob[job.id] ?? []
             const snags = snagsByJob[job.id] ?? []
-            if (lines.length === 0 && snags.length === 0) return null
+            const tasks = tasksByJob[job.id] ?? []
+            if (lines.length === 0 && snags.length === 0 && tasks.length === 0) return null
             const days = job.signed_off_install_date ? daysUntil(job.signed_off_install_date) : null
             const urgentColor = days === null || days < 0 ? '#6B7280' : days <= 14 ? '#EF4444' : days <= 28 ? '#F59E0B' : '#10B981'
             const daysLabel = days === null ? 'No install date'
@@ -119,6 +142,35 @@ export default function TodoView({ jobsWithLines, jobsWithSnags }: { jobsWithLin
                 </div>
 
                 <div className="divide-y" style={{ borderColor: '#252B28' }}>
+                  {/* Tasks, soonest due first */}
+                  {tasks.length > 0 && (
+                    <div className="px-5 py-3">
+                      <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#B89763' }}>Tasks</p>
+                      <div className="space-y-1.5">
+                        {tasks.map((task) => {
+                          const overdue = !!task.due_date && task.due_date < todayISO
+                          return (
+                            <label key={task.id} className="flex items-center gap-2.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={false}
+                                onChange={() => handleToggleTask(job.id, task)}
+                                className="w-4 h-4 rounded flex-none"
+                                style={{ accentColor: '#B89763' }}
+                              />
+                              <span className="flex-1 text-sm" style={{ color: '#D1D5DB' }}>{task.description}</span>
+                              {task.due_date && (
+                                <span className="text-xs font-medium flex-none" style={{ color: overdue ? '#EF4444' : '#6B7280' }}>
+                                  {overdue ? 'Overdue · ' : 'Due '}{fmtDate(task.due_date)}
+                                </span>
+                              )}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Snag checklist */}
                   {snags.length > 0 && (
                     <div className="px-5 py-3">

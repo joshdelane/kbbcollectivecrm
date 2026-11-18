@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { jobMarginTotals } from '@/lib/margin'
-import type { BoardKey, DesignerStats, SnagItem } from '@/types'
+import type { BoardKey, DesignerStats, SnagItem, JobTask } from '@/types'
 
 // Returns total marketing spend (sum of amount) for records whose spend_month
 // falls within the given date range.
@@ -96,9 +96,12 @@ export interface TodoLine {
 // - every open snag on a Project Management or Finished job, whatever its
 //   install date (snags usually turn up after the install, so a date window
 //   would hide exactly the ones that matter)
+// - every open task on a live job (Order Processing, Project Management or
+//   Finished), whatever its due date
 export async function getTodoData(): Promise<{
   jobsWithLines: { job: TodoJob; lines: TodoLine[] }[]
   jobsWithSnags: { job: TodoJob; snags: SnagItem[] }[]
+  jobsWithTasks: { job: TodoJob; tasks: JobTask[] }[]
   count: number
 }> {
   const supabase = await createClient()
@@ -108,7 +111,7 @@ export async function getTodoData(): Promise<{
   const cutoffISO = cutoff.toISOString().slice(0, 10)
   const todayISO = new Date().toISOString().slice(0, 10)
 
-  const [{ data: upcomingJobs }, { data: snags }] = await Promise.all([
+  const [{ data: upcomingJobs }, { data: snags }, { data: tasks }] = await Promise.all([
     supabase
       .from('jobs')
       .select('id, job_id, customer_name, signed_off_install_date, quote_revision')
@@ -123,6 +126,14 @@ export async function getTodoData(): Promise<{
       .eq('is_done', false)
       .is('jobs.deleted_at', null)
       .or('stage.eq.project_management,signed_off_at.not.is.null', { referencedTable: 'jobs' })
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('job_tasks')
+      .select('*, jobs!inner(id, job_id, customer_name, signed_off_install_date, stage, signed_off_at, deleted_at)')
+      .eq('is_done', false)
+      .is('jobs.deleted_at', null)
+      .or('stage.in.(order_processing,project_management),signed_off_at.not.is.null', { referencedTable: 'jobs' })
+      .order('due_date', { ascending: true, nullsFirst: false })
       .order('sort_order', { ascending: true }),
   ])
 
@@ -155,10 +166,22 @@ export async function getTodoData(): Promise<{
   }
   const jobsWithSnags = [...snagJobs.values()]
 
+  type TaskRow = JobTask & { jobs: TodoJob }
+  const taskJobs = new Map<string, { job: TodoJob; tasks: JobTask[] }>()
+  for (const row of (tasks as TaskRow[]) ?? []) {
+    const { jobs: j, ...task } = row
+    if (!taskJobs.has(j.id)) {
+      taskJobs.set(j.id, { job: { id: j.id, job_id: j.job_id, customer_name: j.customer_name, signed_off_install_date: j.signed_off_install_date }, tasks: [] })
+    }
+    taskJobs.get(j.id)!.tasks.push(task)
+  }
+  const jobsWithTasks = [...taskJobs.values()]
+
   const count = jobsWithLines.reduce((n, jl) => n + jl.lines.length, 0)
     + jobsWithSnags.reduce((n, js) => n + js.snags.length, 0)
+    + jobsWithTasks.reduce((n, jt) => n + jt.tasks.length, 0)
 
-  return { jobsWithLines, jobsWithSnags, count }
+  return { jobsWithLines, jobsWithSnags, jobsWithTasks, count }
 }
 
 export async function getTodoCount(): Promise<number> {

@@ -8,6 +8,7 @@ import type { Job, Profile, Stage, EnquirySource } from '@/types'
 import QuoteTab from './QuoteTab'
 import SnagChecklist from './SnagChecklist'
 import ExtraCostsTab from './ExtraCostsTab'
+import JobTasksTab from './JobTasksTab'
 
 interface JobDetailPanelProps {
   job: Job
@@ -245,7 +246,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
   const showProjectManagement = stageIndex >= 3
   const showQuoteTab = stageIndex >= 1
 
-  const [tab, setTab] = useState<'details' | 'quote' | 'costs'>('details')
+  const [tab, setTab] = useState<'details' | 'tasks' | 'quote' | 'costs'>('details')
 
   return (
     <>
@@ -273,7 +274,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
         {/* Tab bar — only for Qualified Leads and Order Processing */}
         {showQuoteTab && (
           <div className="flex-none flex" style={{ borderBottom: '1px solid #F3F4F6' }}>
-            {(showOrderProcessing ? (['details', 'quote', 'costs'] as const) : (['details', 'quote'] as const)).map((t) => (
+            {(showOrderProcessing ? (['details', 'tasks', 'quote', 'costs'] as const) : (['details', 'quote'] as const)).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -284,7 +285,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
                   marginBottom: '-1px',
                 }}
               >
-                {t === 'details' ? 'Details' : t === 'quote' ? 'Quote' : 'Extra Costs'}
+                {t === 'details' ? 'Details' : t === 'tasks' ? 'Tasks' : t === 'quote' ? 'Quote' : 'Extra Costs'}
               </button>
             ))}
           </div>
@@ -297,6 +298,13 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
           </div>
         )}
 
+        {/* Tasks tab */}
+        {showOrderProcessing && tab === 'tasks' && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <JobTasksTab jobId={job.id} profiles={profiles} />
+          </div>
+        )}
+
         {/* Extra costs tab */}
         {showOrderProcessing && tab === 'costs' && (
           <div className="flex-1 min-h-0 flex flex-col">
@@ -305,7 +313,7 @@ export default function JobDetailPanel({ job, profiles, enquirySources, onSource
         )}
 
         {/* Details form + footer */}
-        {(!showQuoteTab || tab === 'details') && tab !== 'costs' && <>
+        {(!showQuoteTab || tab === 'details') && tab !== 'costs' && tab !== 'tasks' && <>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <SectionHeading title="Customer Details" />
 

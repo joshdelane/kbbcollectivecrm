@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { Job, Stage, BoardKey, SnagItem, ExtraCost } from '@/types'
+import type { Job, Stage, BoardKey, SnagItem, JobTask, ExtraCost } from '@/types'
 
 // ── Helper: get current user's organisation_id ────────────────
 async function getOrgId(): Promise<string | null> {
@@ -794,6 +794,65 @@ export async function deleteSnagItem(id: string) {
   const supabase = await createClient()
   const { error } = await supabase
     .from('snag_items')
+    .delete()
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+// ── Tasks on live jobs (Order Processing onwards) ─────────────────
+
+export async function getJobTasks(jobId: string): Promise<JobTask[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('job_tasks')
+    .select('*')
+    .eq('job_id', jobId)
+    .order('sort_order', { ascending: true })
+  return (data as JobTask[]) ?? []
+}
+
+export async function addJobTask(
+  jobId: string,
+  task: { description: string; due_date: string | null; assigned_to: string | null }
+) {
+  if (!task.description.trim()) return { error: 'Description cannot be empty' }
+  const supabase = await createClient()
+  const { data: existing } = await supabase
+    .from('job_tasks')
+    .select('sort_order')
+    .eq('job_id', jobId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+  const nextSort = existing && existing.length > 0 ? existing[0].sort_order + 1 : 0
+
+  const { data, error } = await supabase
+    .from('job_tasks')
+    .insert([{ job_id: jobId, ...task, description: task.description.trim(), sort_order: nextSort }])
+    .select()
+    .single()
+
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true, item: data as JobTask }
+}
+
+export async function toggleJobTask(id: string, isDone: boolean) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('job_tasks')
+    .update({ is_done: isDone, done_at: isDone ? new Date().toISOString() : null })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/', 'layout')
+  return { success: true }
+}
+
+export async function deleteJobTask(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('job_tasks')
     .delete()
     .eq('id', id)
   if (error) return { error: error.message }

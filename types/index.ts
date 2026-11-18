@@ -133,6 +133,18 @@ export interface SnagItem {
   created_at: string
 }
 
+export interface JobTask {
+  id: string
+  job_id: string
+  description: string
+  due_date: string | null
+  assigned_to: string | null
+  is_done: boolean
+  done_at: string | null
+  sort_order: number
+  created_at: string
+}
+
 export interface ExtraCost {
   id: string
   job_id: string

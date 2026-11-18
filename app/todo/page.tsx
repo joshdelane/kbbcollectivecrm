@@ -9,7 +9,7 @@ export default async function TodoPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ jobsWithLines, jobsWithSnags, count }, stageCounts] = await Promise.all([
+  const [{ jobsWithLines, jobsWithSnags, jobsWithTasks, count }, stageCounts] = await Promise.all([
     getTodoData(),
     getStageCounts(),
   ])
@@ -18,7 +18,7 @@ export default async function TodoPage() {
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#1D211F' }}>
       <Sidebar stageCounts={stageCounts} todoCount={count} />
       <main className="flex-1 overflow-y-auto">
-        <TodoView jobsWithLines={jobsWithLines} jobsWithSnags={jobsWithSnags} />
+        <TodoView jobsWithLines={jobsWithLines} jobsWithSnags={jobsWithSnags} jobsWithTasks={jobsWithTasks} />
       </main>
     </div>
   )
